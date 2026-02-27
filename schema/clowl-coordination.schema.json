@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clowl.dev/schema/clowl-coordination/1.0.0",
+  "title": "CLowl Coordination Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "clowl", "mid", "task_id", "state", "ts", "trace", "routing", "auth", "semantic"
+  ],
+  "properties": {
+    "clowl": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Coordination layer version (semver)."
+    },
+    "mid": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique message identifier (UUIDv7 recommended)."
+    },
+    "task_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable identifier for task lifecycle. All messages in a task share this."
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "CREATED", "DISPATCHED", "ACKNOWLEDGED", "RUNNING",
+        "WAITING", "COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"
+      ],
+      "description": "Current lifecycle state of the task."
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix timestamp (seconds) when this message was created."
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trace_id"],
+      "properties": {
+        "trace_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Root trace ID linking the entire task chain."
+        },
+        "parent_task_id": {
+          "type": ["string", "null"],
+          "format": "uuid",
+          "description": "Parent task ID for subtask/delegation relationships."
+        },
+        "parent_mid": {
+          "type": ["string", "null"],
+          "format": "uuid",
+          "description": "Message ID of the parent message that triggered this one."
+        }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "broadcast": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer"],
+      "properties": {
+        "issuer": {
+          "type": "string",
+          "description": "Agent that issued this message."
+        },
+        "token": {
+          "type": ["string", "null"],
+          "description": "JWT or signature for verification."
+        },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Permission scopes granted to this message."
+        }
+      }
+    },
+    "semantic": {
+      "$ref": "https://clowl.dev/schema/clowl-s/1.0.0",
+      "description": "The LLM-generated semantic payload."
+    }
+  }
+}

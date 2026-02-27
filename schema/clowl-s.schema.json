@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clowl.dev/schema/clowl-s/1.0.0",
+  "title": "CLowl Semantic Envelope (CLowl-S)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["p", "from", "to", "task", "data", "ctx"],
+  "properties": {
+    "p": {
+      "type": "string",
+      "enum": ["REQ", "INF", "ACK", "ERR", "DONE", "QRY", "PROG", "CNCL"],
+      "description": "Performative indicating semantic intent."
+    },
+    "from": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-zA-Z0-9._-]+$",
+      "description": "Originating agent identifier."
+    },
+    "to": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-zA-Z0-9._-]+$",
+      "description": "Target agent identifier."
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Task name or action identifier."
+    },
+    "data": {
+      "type": "object",
+      "description": "Structured payload. Shape determined by task."
+    },
+    "ctx": {
+      "type": ["string", "null"],
+      "maxLength": 512,
+      "description": "Reference to external context. Must not contain large inline content."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "p": { "const": "ERR" } }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["code", "msg"],
+            "additionalProperties": true,
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^E[0-9]{3}$|^[A-Z0-9_]{3,32}$",
+                "description": "Error code. E001-E016 for protocol errors, uppercase strings for application errors."
+              },
+              "msg": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Human-readable error description."
+              },
+              "retry": {
+                "type": "boolean",
+                "description": "Whether the sender should retry."
+              },
+              "cascade_err": {
+                "type": ["string", "null"],
+                "description": "Root cause error code from a downstream agent."
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
