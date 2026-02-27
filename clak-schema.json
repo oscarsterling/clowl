@@ -1,0 +1,212 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://clelp.ai/clowl/schema/v0.2",
+  "title": "CLowl Message v0.2",
+  "description": "CLowl (Claw + Talk) — a structured communication language for AI agent-to-agent messaging. Every message is auditable and has a deterministic English translation.",
+  "type": "object",
+  "required": ["clowl", "mid", "ts", "p", "from", "to", "cid", "body"],
+  "additionalProperties": false,
+  "properties": {
+    "clowl": {
+      "type": "string",
+      "const": "0.2",
+      "description": "Protocol version. Must be '0.2' for this schema."
+    },
+    "mid": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Unique message ID. Use UUIDv7 (time-ordered). Enables idempotency and dedup."
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix epoch timestamp in seconds when the message was created."
+    },
+    "tid": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Trace ID. Links a task across multiple agents and hops. Set at task origin, propagate through all derived messages."
+    },
+    "pid": {
+      "type": ["string", "null"],
+      "maxLength": 128,
+      "description": "Parent message ID. Links this message to the message it responds to. Null for root messages."
+    },
+    "p": {
+      "type": "string",
+      "enum": ["REQ", "INF", "ACK", "ERR", "DLGT", "DONE", "CNCL", "QRY", "PROG", "CAPS"],
+      "description": "Performative code. Defines the intent of the message. REQ=Request, INF=Inform, ACK=Acknowledge, ERR=Error, DLGT=Delegate, DONE=Complete, CNCL=Cancel, QRY=Query, PROG=Progress, CAPS=Capabilities."
+    },
+    "from": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Sender agent identifier."
+    },
+    "to": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Single recipient agent ID, or '*' for broadcast."
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "minItems": 1,
+          "description": "Array of recipient agent IDs for multicast."
+        }
+      ],
+      "description": "Recipient(s). String, '*' for broadcast, or array for multicast."
+    },
+    "cid": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Conversation ID. Groups all related messages into a thread."
+    },
+    "body": {
+      "type": "object",
+      "required": ["t", "d"],
+      "additionalProperties": false,
+      "properties": {
+        "t": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Free-form task type string. Examples: search, draft, analyze, review, deploy, notify. DLGT messages must include delegation_mode in body.d."
+        },
+        "d": {
+          "type": "object",
+          "description": "Task-specific data payload. Schema varies by task type. May be {} for simple ACK. DLGT messages must include 'delegation_mode' field with value: transfer, fork, or assist."
+        }
+      },
+      "description": "Message payload."
+    },
+    "ctx": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": ["string", "null"],
+          "maxLength": 2048,
+          "description": "File path or URL to shared context. Primary, token-efficient mode."
+        },
+        "inline": {
+          "type": ["string", "null"],
+          "maxLength": 2000,
+          "description": "Inline fallback content. Max 2000 characters. Use when ref is unreachable (cross-cloud, sandboxed agents)."
+        },
+        "hash": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 hex digest of the content at ref. Enables immutability verification."
+        }
+      },
+      "description": "Context reference object. ref is the preferred mode; inline is a degraded fallback."
+    },
+    "auth": {
+      "type": "string",
+      "maxLength": 2048,
+      "description": "Optional auth token for sender identity verification and context access rights."
+    },
+    "det": {
+      "type": "boolean",
+      "default": false,
+      "description": "Determinism flag. true = agent declares result is reproducible (e.g., code execution, DB query). false (default) = LLM stochastic reasoning used."
+    }
+  },
+  "if": {
+    "properties": { "p": { "const": "DLGT" } },
+    "required": ["p"]
+  },
+  "then": {
+    "properties": {
+      "body": {
+        "properties": {
+          "d": {
+            "required": ["delegation_mode"],
+            "properties": {
+              "delegation_mode": {
+                "type": "string",
+                "enum": ["transfer", "fork", "assist"],
+                "description": "transfer = full handoff; fork = parallel work; assist = helper role."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "clowl": "0.2",
+      "mid": "01914b2c-a000-7000-8000-000000000001",
+      "ts": 1709078400,
+      "tid": "trace-001",
+      "pid": null,
+      "p": "REQ",
+      "from": "oscar",
+      "to": "radar",
+      "cid": "conv-001",
+      "body": {
+        "t": "search",
+        "d": { "q": "MCP vs A2A", "scope": "web" }
+      },
+      "ctx": {
+        "ref": "projects/clowl/",
+        "inline": null,
+        "hash": null
+      },
+      "det": false
+    },
+    {
+      "clowl": "0.2",
+      "mid": "01914b2c-b000-7000-8000-000000000002",
+      "ts": 1709078461,
+      "tid": "trace-001",
+      "pid": "01914b2c-a000-7000-8000-000000000001",
+      "p": "DLGT",
+      "from": "oscar",
+      "to": "muse",
+      "cid": "conv-001",
+      "body": {
+        "t": "analyze",
+        "d": {
+          "delegation_mode": "transfer",
+          "target": "content angle",
+          "type": "competitive"
+        }
+      },
+      "ctx": {
+        "ref": "research/mcp-vs-a2a.md",
+        "inline": null,
+        "hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+      },
+      "det": false
+    },
+    {
+      "clowl": "0.2",
+      "mid": "01914b2c-c000-7000-8000-000000000003",
+      "ts": 1709078400,
+      "p": "CAPS",
+      "from": "radar",
+      "to": "*",
+      "cid": "system",
+      "body": {
+        "t": "capabilities",
+        "d": {
+          "supports": ["search:web", "search:repo", "analyze:trend"],
+          "clowl": "0.2"
+        }
+      }
+    }
+  ]
+}
