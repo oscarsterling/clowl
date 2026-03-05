@@ -1,0 +1,51 @@
+{
+  "name": "clowl",
+  "version": "0.2.0",
+  "description": "CLowl - A structured communication language for AI agent-to-agent messaging",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  },
+  "keywords": [
+    "clowl",
+    "agent",
+    "ai",
+    "protocol",
+    "communication",
+    "multi-agent",
+    "mcp",
+    "a2a"
+  ],
+  "author": "Oscar Sterling Agency",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oscarsterling/clowl"
+  },
+  "homepage": "https://clowl.dev",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -2,7 +2,43 @@
 
 **A language for AI agents that humans can read.**
 
-CLowl (Claw + Talk) is a structured communication protocol for AI agent-to-agent messaging. Every CLowl message has a deterministic English translation — paste any message into the translator and see exactly what the agents said. Enterprises can audit any agent conversation. Developers can debug multi-agent pipelines in seconds. Nobody has to trust a black box.
+CLowl (Claw + Talk) is a structured communication protocol for AI agent-to-agent messaging. It defines a minimal JSON schema with typed performatives, message metadata, and context referencing that runs on top of any transport (MCP, A2A, HTTP, WebSocket, stdio, etc.). Every CLowl message has a deterministic English translation, so enterprises can audit any agent conversation and developers can debug multi-agent pipelines in seconds.
+
+---
+
+## Install
+
+**TypeScript / Node.js:**
+```bash
+npm install clowl
+```
+
+**Python:**
+```bash
+pip install clowl
+```
+
+---
+
+## Quick Start
+
+**TypeScript:**
+```typescript
+import { createReq, generateCid, generateTid } from "clowl";
+
+const cid = generateCid();
+const req = createReq("oscar", "radar", cid, "search", { q: "MCP vs A2A" }, { tid: generateTid() });
+console.log(req.toHuman());
+```
+
+**Python:**
+```python
+from clowl import create_req, generate_cid, generate_tid
+
+cid = generate_cid()
+req = create_req("oscar", "radar", cid, "search", {"q": "MCP vs A2A"}, tid=generate_tid())
+print(req.to_human())
+```
 
 ---
 
@@ -10,7 +46,7 @@ CLowl (Claw + Talk) is a structured communication protocol for AI agent-to-agent
 
 When AI agents talk to each other, nobody knows what they're saying.
 
-Agent A sends a blob of unstructured text to Agent B. Agent B replies with another blob. Somewhere in that chain, something goes wrong — and you have no idea what was requested, what was delegated, or where the task died. Multi-agent systems are powerful and opaque in equal measure.
+Agent A sends a blob of unstructured text to Agent B. Agent B replies with another blob. Somewhere in that chain, something goes wrong, and you have no idea what was requested, what was delegated, or where the task died. Multi-agent systems are powerful and opaque in equal measure.
 
 ---
 
@@ -19,40 +55,8 @@ Agent A sends a blob of unstructured text to Agent B. Agent B replies with anoth
 CLowl is a language agents speak and humans can read. It defines:
 
 - **Structured messages** with typed intent (requests, delegates, errors, progress updates)
-- **Message metadata** — trace IDs, parent links, timestamps — so every conversation is reconstructable
-- **A live translator** — CLowl JSON in, plain English out. Instantly.
-
-Think of it like a Spanish-to-English translator for agent communication. That's the product. That's the website. That's the demo.
-
----
-
-## Quick Start
-
-**Option 1: Inject the system prompt**
-
-Add [`system-prompt-v0.2.md`](system-prompt-v0.2.md) to your agent's system prompt. Any LLM will start generating CLowl messages immediately.
-
-**Option 2: Add the JSON schema to your tool calls**
-
-Use [`clowl-schema.json`](clowl-schema.json) as a function-calling tool definition. Works with OpenAI, Anthropic, Google, and any local model that supports structured output.
-
-```python
-tools = [{"name": "send_clowl", "parameters": json.load(open("clowl-schema.json"))}]
-```
-
-**Option 3: Use the Python library**
-
-```python
-from clowl import create_req, create_done, generate_cid, generate_tid
-
-cid = generate_cid()
-tid = generate_tid()
-
-req = create_req("oscar", "radar", cid, "search",
-                 {"q": "MCP vs A2A", "scope": "web"}, tid=tid)
-print(req.to_human())
-# [2026-02-27 12:00:00 UTC] [t-abc123] oscar → radar: REQUEST search — "MCP vs A2A" (web)
-```
+- **Message metadata** for tracing, dedup, and conversation reconstruction
+- **A live translator** that converts CLowl JSON to plain English instantly
 
 ---
 
@@ -82,47 +86,6 @@ See the [full spec](spec-v0.2.md) for complete field definitions.
 
 ---
 
-## The Translator
-
-Paste CLowl JSON — get English. Paste English — get CLowl JSON. No API needed.
-
-**CLowl → English:**
-```bash
-$ python translator.py '{"clowl":"0.2","mid":"m001","ts":1709078400,"tid":"t001","p":"REQ","from":"oscar","to":"radar","cid":"c001","body":{"t":"search","d":{"q":"CLowl competitors","scope":"web"}}}'
-
-[2026-02-27 12:00:00 UTC] [t001] [m001…] oscar → radar: REQUEST search — "CLowl competitors" (web)
-```
-
-**English → CLowl:**
-```bash
-$ python translator.py 'Oscar asks Radar to search for CLowl competitors'
-
-{
-  "clowl": "0.2",
-  "mid": "01914b...",
-  "ts": 1709078400,
-  "p": "REQ",
-  "from": "oscar",
-  "to": "radar",
-  "cid": "...",
-  "body": { "t": "search", "d": { "q": "CLowl competitors", "scope": "web" } }
-}
-```
-
-**Trace reconstruction** — reconstruct the full timeline for any trace ID from a log file:
-```bash
-$ python translator.py --trace t001 --log messages.jsonl
-
-=== Trace: t001 (10 messages) ===
-
-[12:00:00] [t001] oscar → radar: REQUEST search — "MCP vs A2A comparison" (web)
-[12:00:01] [t001] radar → oscar: ACKNOWLEDGE Acknowledged search — ETA 60s
-[12:01:00] [t001] radar → oscar: COMPLETE search — result_path: research/mcp-vs-a2a.md
-...
-```
-
----
-
 ## Performatives
 
 | Code | Name | Meaning |
@@ -140,29 +103,47 @@ $ python translator.py --trace t001 --log messages.jsonl
 
 ---
 
+## The Translator
+
+Paste CLowl JSON, get English. Paste English, get CLowl JSON. No API needed.
+
+```bash
+$ python translator.py '{"clowl":"0.2","mid":"m001","ts":1709078400,"tid":"t001","p":"REQ","from":"oscar","to":"radar","cid":"c001","body":{"t":"search","d":{"q":"CLowl competitors","scope":"web"}}}'
+
+[2026-02-27 12:00:00 UTC] [t001] [m001...] oscar > radar: REQUEST search
+```
+
+---
+
+## Integration Options
+
+**Option 1: Inject the system prompt**
+
+Add [`system-prompt-v0.2.md`](system-prompt-v0.2.md) to your agent's system prompt. Any LLM will start generating CLowl messages immediately.
+
+**Option 2: Add the JSON schema to your tool calls**
+
+Use [`clowl-schema.json`](clowl-schema.json) as a function-calling tool definition. Works with OpenAI, Anthropic, Google, and any local model that supports structured output.
+
+**Option 3: Use the libraries**
+
+TypeScript and Python libraries provide message creation, validation, state tracking, and translation with zero external dependencies.
+
+---
+
 ## Examples
 
-See [`examples-v0.2.md`](examples-v0.2.md) for full examples with CLowl JSON and English translations:
-
-- Basic REQ / ACK / DONE flow
-- Delegation with `delegation_mode: "transfer"`
-- Broadcast INF to multiple agents
-- Error with retry and inline fallback
-- CAPS capability advertisement
-- Full 5-agent pipeline with trace reconstruction
-- CNCL cancellation flow
-- Context with hash verification
+See [`examples-v0.2.md`](examples-v0.2.md) for full examples with CLowl JSON and English translations.
 
 ---
 
 ## Roadmap
 
 **v0.3 (planned)**
+- Three-layer architecture (Semantic / Coordination / Transport)
 - Streaming progress (chunked PROG messages)
-- Cryptographic message signing (`sig` field)
-- Full SHA-256 context integrity verification workflow
-- SDKs: TypeScript, Go
-- Web demo: paste any CLowl message, see English translation live
+- Cryptographic message signing
+- Go SDK
 
 **v1.0 (stable)**
 - Breaking changes locked out
@@ -176,7 +157,7 @@ See [`examples-v0.2.md`](examples-v0.2.md) for full examples with CLowl JSON and
 CLowl is an open spec. Contributions welcome:
 
 1. Fork the repo
-2. Read [`spec-v0.2.md`](spec-v0.2.md) — the spec is the source of truth
+2. Read [`spec-v0.2.md`](spec-v0.2.md) for the source of truth
 3. Open an issue for design questions before building
 4. PRs should include spec changes + updated examples
 
@@ -184,8 +165,8 @@ CLowl is an open spec. Contributions welcome:
 
 ## License
 
-MIT — see LICENSE file.
+MIT
 
 ---
 
-Built by [Oscar Sterling Agency](https://clelp.ai) | [clelp.ai](https://clelp.ai)
+Built by [Oscar Sterling Agency](https://clowl.dev) | [clowl.dev](https://clowl.dev)
