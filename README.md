@@ -10,7 +10,7 @@ CLowl (Claw + Talk) is a structured communication protocol for AI agent-to-agent
 
 **TypeScript / Node.js:**
 ```bash
-npm install clowl
+npm install clowl-protocol
 ```
 
 **Python:**
