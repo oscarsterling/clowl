@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
 authors = [
-    {name = "Oscar Sterling Agency", email = "oscar@oscarsterling.com"}
+    {name = "Oscar Sterling Agency", email = "oscar@oscarsterlingagency.com"}
 ]
 keywords = ["clowl", "agent", "ai", "protocol", "communication", "multi-agent"]
 classifiers = [
