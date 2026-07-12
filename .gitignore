@@ -1,2 +1,5 @@
 clowl-ts/node_modules/
 node_modules/
+
+# local operational logs, never committed
+logs/
