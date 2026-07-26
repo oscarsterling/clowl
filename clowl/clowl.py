@@ -13,7 +13,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Union, List
+from typing import Optional, Union, List, NamedTuple
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +33,10 @@ try:
         VALID_DELEGATION_MODES,
         CTX_INLINE_MAX_LENGTH,
         CTX_HASH_LENGTH,
+        PROGRESS_PCT_MIN,
+        PROGRESS_PCT_MAX,
+        PROGRESS_SEQ_MIN,
+        PROGRESS_PARTIAL_FIELDS,
     )
 except ImportError:  # standalone (repo-root) execution, not imported as a package
     from _generated import (
@@ -41,6 +45,10 @@ except ImportError:  # standalone (repo-root) execution, not imported as a packa
         VALID_DELEGATION_MODES,
         CTX_INLINE_MAX_LENGTH,
         CTX_HASH_LENGTH,
+        PROGRESS_PCT_MIN,
+        PROGRESS_PCT_MAX,
+        PROGRESS_SEQ_MIN,
+        PROGRESS_PARTIAL_FIELDS,
     )
 
 PERFORMATIVE_NAMES = {
@@ -244,6 +252,38 @@ class CLowlMessage:
                 new_body["d"] = d
                 work["body"] = new_body
 
+        # PROG typed partial coercions (scoped to PROG): numeric-string seq/pct to int,
+        # out-of-range pct clamped into 0-100, non-boolean final to bool.
+        body = work.get("body")
+        if work.get("p") == "PROG" and isinstance(body, dict) and isinstance(body.get("d"), dict):
+            pd = dict(body["d"])
+            pd_changed = False
+            if isinstance(pd.get("seq"), str) and re.fullmatch(r"-?\d+", pd["seq"].strip()):
+                n = int(pd["seq"].strip())
+                warnings.append({"field": "body.d.seq", "original": pd["seq"], "coerced": n, "reason": "numeric-string-to-seq"})
+                pd["seq"] = n
+                pd_changed = True
+            if isinstance(pd.get("pct"), str) and re.fullmatch(r"-?\d+", pd["pct"].strip()):
+                n = int(pd["pct"].strip())
+                warnings.append({"field": "body.d.pct", "original": pd["pct"], "coerced": n, "reason": "numeric-string-to-pct"})
+                pd["pct"] = n
+                pd_changed = True
+            pv = pd.get("pct")
+            if isinstance(pv, int) and not isinstance(pv, bool) and not (PROGRESS_PCT_MIN <= pv <= PROGRESS_PCT_MAX):
+                clamped = max(PROGRESS_PCT_MIN, min(PROGRESS_PCT_MAX, pv))
+                warnings.append({"field": "body.d.pct", "original": pv, "coerced": clamped, "reason": "clamp-pct-range"})
+                pd["pct"] = clamped
+                pd_changed = True
+            if "final" in pd and not isinstance(pd["final"], bool):
+                b = bool(pd["final"])
+                warnings.append({"field": "body.d.final", "original": pd["final"], "coerced": b, "reason": "coerce-final-to-bool"})
+                pd["final"] = b
+                pd_changed = True
+            if pd_changed:
+                new_body = dict(body)
+                new_body["d"] = pd
+                work["body"] = new_body
+
         # tid: stringify non-string (leave None alone)
         tid = work.get("tid")
         if tid is not None and not isinstance(tid, str):
@@ -319,6 +359,27 @@ class CLowlMessage:
                     f"DLGT messages require body.d.delegation_mode to be one of "
                     f"{sorted(VALID_DELEGATION_MODES)}, got {mode!r}"
                 )
+
+        # PROG typed streaming partial fields (all optional; validated when present).
+        # Backward compatible: a freeform PROG body with only note/pct still validates.
+        if self.p == "PROG" and isinstance(self.body.get("d"), dict):
+            pd = self.body["d"]
+            if "seq" in pd:
+                seq = pd["seq"]
+                if isinstance(seq, bool) or not isinstance(seq, int) or seq < PROGRESS_SEQ_MIN:
+                    errors.append(f"PROG body.d.seq must be an integer >= {PROGRESS_SEQ_MIN} (got {seq!r})")
+            if "pct" in pd:
+                pct = pd["pct"]
+                if isinstance(pct, bool) or not isinstance(pct, int) or not (PROGRESS_PCT_MIN <= pct <= PROGRESS_PCT_MAX):
+                    errors.append(f"PROG body.d.pct must be an integer {PROGRESS_PCT_MIN}-{PROGRESS_PCT_MAX} (got {pct!r})")
+            if "final" in pd and not isinstance(pd["final"], bool):
+                errors.append(f"PROG body.d.final must be a boolean (got {pd['final']!r})")
+            if "partial" in pd and not isinstance(pd["partial"], dict):
+                errors.append(f"PROG body.d.partial must be an object (got {pd['partial']!r})")
+            if "phase" in pd and not isinstance(pd["phase"], str):
+                errors.append(f"PROG body.d.phase must be a string (got {pd['phase']!r})")
+            if "note" in pd and not isinstance(pd["note"], str):
+                errors.append(f"PROG body.d.note must be a string (got {pd['note']!r})")
 
         # ctx validation
         if self.ctx is not None:
@@ -468,12 +529,32 @@ def create_dlgt(
 
 def create_prog(
     from_: str, to: str, cid: str, task: str,
-    pct: Optional[int] = None, note: str = "", **kwargs
+    pct: Optional[int] = None, note: str = "",
+    *,
+    seq: Optional[int] = None,
+    phase: Optional[str] = None,
+    partial: Optional[dict] = None,
+    final: bool = False,
+    **kwargs,
 ) -> CLowlMessage:
-    """Create a PROG (Progress) message."""
+    """Create a PROG (Progress) message.
+
+    Freeform (pct, note) stays supported. The typed streaming partial fields
+    (seq, phase, partial, final) are opt-in: pass them to emit a structured
+    partial that consumers can render and audits can fold via reconstruct_progress.
+    Only provided fields are emitted; final is emitted only when True.
+    """
     data: dict = {}
+    if seq is not None:
+        data["seq"] = seq
+    if phase is not None:
+        data["phase"] = phase
     if pct is not None:
         data["pct"] = pct
+    if partial is not None:
+        data["partial"] = partial
+    if final:
+        data["final"] = True
     if note:
         data["note"] = note
     return CLowlMessage("PROG", from_, to, cid, task, data, **kwargs)
@@ -496,6 +577,50 @@ def create_cncl(
     """Create a CNCL (Cancel) message."""
     data = {"reason": reason} if reason else {}
     return CLowlMessage("CNCL", from_, to, cid, task, data, **kwargs)
+
+
+class ProgressReconstruction(NamedTuple):
+    """Result of folding an ordered list of PROG partial messages."""
+    latest_state: dict
+    is_final: bool
+    gaps: list
+
+
+def reconstruct_progress(messages) -> "ProgressReconstruction":
+    """Fold an ordered list of PROG messages into reconstructed task state.
+
+    Returns (latest_state, is_final, gaps):
+      latest_state: shallow merge of each PROG body.d.partial in the given order
+                    (later messages win) so audits see the accumulated result.
+      is_final:     True if any PROG message carries final == True.
+      gaps:         sorted missing seq numbers between the min and max observed
+                    integer seq (empty when no gaps or no seq values present).
+    Non-PROG messages and messages without the relevant fields are ignored.
+    """
+    latest_state: dict = {}
+    is_final = False
+    seqs = []
+    for m in messages:
+        if getattr(m, "p", None) != "PROG":
+            continue
+        body = getattr(m, "body", None)
+        d = body.get("d", {}) if isinstance(body, dict) else {}
+        if not isinstance(d, dict):
+            continue
+        partial = d.get("partial")
+        if isinstance(partial, dict):
+            latest_state.update(partial)
+        if d.get("final") is True:
+            is_final = True
+        seq = d.get("seq")
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            seqs.append(seq)
+    gaps = []
+    if seqs:
+        lo, hi = min(seqs), max(seqs)
+        present = set(seqs)
+        gaps = [n for n in range(lo, hi + 1) if n not in present]
+    return ProgressReconstruction(latest_state, is_final, gaps)
 
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@
  * Mirrors the Python reference library. Zero runtime dependencies.
  */
 import { CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES, PERFORMATIVE_NAMES, } from "./types.js";
+import { CTX_INLINE_MAX_LENGTH, CTX_HASH_LENGTH, PROGRESS_PCT_MIN, PROGRESS_PCT_MAX, PROGRESS_SEQ_MIN, } from "./generated.js";
 // ---------------------------------------------------------------------------
 // ID Generation
 // ---------------------------------------------------------------------------
@@ -59,8 +60,9 @@ export class CLowlMessage {
     ctx;
     auth;
     det;
+    coercionWarnings = [];
     constructor(p, from, to, cid, bodyT, bodyD = {}, options = {}) {
-        this.clowl = CLOWL_VERSION;
+        this.clowl = options.clowl ?? CLOWL_VERSION;
         this.mid = options.mid ?? generateMid();
         this.ts = options.ts ?? Math.floor(Date.now() / 1000);
         this.p = p;
@@ -106,11 +108,14 @@ export class CLowlMessage {
         return JSON.stringify(this.toDict(), null, indent);
     }
     /** Construct a CLowlMessage from a plain object (e.g., parsed JSON). */
-    static fromDict(data) {
+    static fromDict(data, options = {}) {
+        if (options.lenient)
+            return CLowlMessage.parseLenient(data);
         const body = data.body ?? { t: "", d: {} };
         const bodyT = body.t ?? "";
         const bodyD = (body.d ?? {});
         return new CLowlMessage(data.p, data.from, data.to, data.cid, bodyT, bodyD, {
+            clowl: data.clowl,
             mid: data.mid,
             ts: data.ts,
             tid: data.tid,
@@ -119,6 +124,114 @@ export class CLowlMessage {
             auth: data.auth,
             det: data.det ?? false,
         });
+    }
+    /**
+     * Lenient parse: coerce near-miss payloads into the declared schema and record
+     * the original defects as coercionWarnings so audits can see what was changed.
+     * Strict fromDict stays the default and is unchanged.
+     */
+    static parseLenient(data) {
+        const warnings = [];
+        if (typeof data !== "object" || data === null || Array.isArray(data)) {
+            // Non-object input cannot be coerced; build an empty message so validate() fails.
+            const msg = CLowlMessage.fromDict({});
+            msg.coercionWarnings = warnings;
+            return msg;
+        }
+        const work = { ...data };
+        // clowl version
+        if (typeof work.clowl === "string" && work.clowl !== CLOWL_VERSION) {
+            warnings.push({ field: "clowl", original: work.clowl, coerced: CLOWL_VERSION, reason: "coerce-clowl-version" });
+            work.clowl = CLOWL_VERSION;
+        }
+        // ts: numeric string -> int
+        if (typeof work.ts === "string" && /^-?\d+$/.test(work.ts.trim())) {
+            const n = parseInt(work.ts.trim(), 10);
+            warnings.push({ field: "ts", original: work.ts, coerced: n, reason: "numeric-string-to-int" });
+            work.ts = n;
+        }
+        // p: trim then uppercase (only when it lands on a valid performative)
+        if (typeof work.p === "string") {
+            const trimmed = work.p.trim();
+            if (trimmed !== work.p && VALID_PERFORMATIVES.includes(trimmed)) {
+                warnings.push({ field: "p", original: work.p, coerced: trimmed, reason: "trim-performative" });
+                work.p = trimmed;
+            }
+            else if (!VALID_PERFORMATIVES.includes(work.p) &&
+                VALID_PERFORMATIVES.includes(work.p.toUpperCase())) {
+                const up = work.p.toUpperCase();
+                warnings.push({ field: "p", original: work.p, coerced: up, reason: "uppercase-performative" });
+                work.p = up;
+            }
+        }
+        // body.d.delegation_mode: lowercase (DLGT). Clone body/d so the caller's input is never mutated.
+        const body = (work.body ?? {});
+        if (work.p === "DLGT" && body && typeof body === "object" && body.d && typeof body.d === "object") {
+            const origD = body.d;
+            const mode = origD.delegation_mode;
+            if (typeof mode === "string" &&
+                !VALID_DELEGATION_MODES.includes(mode) &&
+                VALID_DELEGATION_MODES.includes(mode.toLowerCase())) {
+                const lower = mode.toLowerCase();
+                warnings.push({ field: "body.d.delegation_mode", original: mode, coerced: lower, reason: "lowercase-delegation-mode" });
+                const newD = { ...origD, delegation_mode: lower };
+                work.body = { ...body, d: newD };
+            }
+        }
+        // PROG typed partial coercions (scoped to PROG): numeric-string seq/pct to int,
+        // out-of-range pct clamped into 0-100, non-boolean final to bool. Clone body/d so input is never mutated.
+        if (work.p === "PROG" && body && typeof body === "object" && body.d && typeof body.d === "object" && !Array.isArray(body.d)) {
+            const origPd = body.d;
+            const newPd = { ...origPd };
+            let pdChanged = false;
+            if (typeof newPd.seq === "string" && /^-?\d+$/.test(newPd.seq.trim())) {
+                const n = parseInt(newPd.seq.trim(), 10);
+                warnings.push({ field: "body.d.seq", original: newPd.seq, coerced: n, reason: "numeric-string-to-seq" });
+                newPd.seq = n;
+                pdChanged = true;
+            }
+            if (typeof newPd.pct === "string" && /^-?\d+$/.test(newPd.pct.trim())) {
+                const n = parseInt(newPd.pct.trim(), 10);
+                warnings.push({ field: "body.d.pct", original: newPd.pct, coerced: n, reason: "numeric-string-to-pct" });
+                newPd.pct = n;
+                pdChanged = true;
+            }
+            if (typeof newPd.pct === "number" && Number.isInteger(newPd.pct) && (newPd.pct < PROGRESS_PCT_MIN || newPd.pct > PROGRESS_PCT_MAX)) {
+                const clamped = Math.max(PROGRESS_PCT_MIN, Math.min(PROGRESS_PCT_MAX, newPd.pct));
+                warnings.push({ field: "body.d.pct", original: newPd.pct, coerced: clamped, reason: "clamp-pct-range" });
+                newPd.pct = clamped;
+                pdChanged = true;
+            }
+            if ("final" in newPd && typeof newPd.final !== "boolean") {
+                const b = Boolean(newPd.final);
+                warnings.push({ field: "body.d.final", original: newPd.final, coerced: b, reason: "coerce-final-to-bool" });
+                newPd.final = b;
+                pdChanged = true;
+            }
+            if (pdChanged)
+                work.body = { ...body, d: newPd };
+        }
+        // tid: stringify non-string (leave null/undefined alone)
+        if (work.tid !== undefined && work.tid !== null && typeof work.tid !== "string") {
+            const s = String(work.tid);
+            warnings.push({ field: "tid", original: work.tid, coerced: s, reason: "stringify-tid" });
+            work.tid = s;
+        }
+        // pid: stringify non-string (leave null/undefined alone; null pid is valid)
+        if (work.pid !== undefined && work.pid !== null && typeof work.pid !== "string") {
+            const s = String(work.pid);
+            warnings.push({ field: "pid", original: work.pid, coerced: s, reason: "stringify-pid" });
+            work.pid = s;
+        }
+        // det: coerce non-boolean to boolean
+        if (work.det !== undefined && typeof work.det !== "boolean") {
+            const b = Boolean(work.det);
+            warnings.push({ field: "det", original: work.det, coerced: b, reason: "coerce-det-to-bool" });
+            work.det = b;
+        }
+        const msg = CLowlMessage.fromDict(work);
+        msg.coercionWarnings = warnings;
+        return msg;
     }
     /** Construct a CLowlMessage from a JSON string. */
     static fromJson(jsonStr) {
@@ -136,7 +249,7 @@ export class CLowlMessage {
         if (!this.mid) {
             errors.push("Missing required field: mid");
         }
-        if (typeof this.ts !== "number" || this.ts < 0) {
+        if (typeof this.ts !== "number" || !Number.isInteger(this.ts) || this.ts < 0) {
             errors.push(`Invalid ts: ${JSON.stringify(this.ts)} (must be non-negative integer)`);
         }
         if (!VALID_PERFORMATIVES.includes(this.p)) {
@@ -170,6 +283,35 @@ export class CLowlMessage {
                 errors.push(`DLGT messages require body.d.delegation_mode to be one of ${[...VALID_DELEGATION_MODES].sort().join(", ")}, got ${JSON.stringify(mode)}`);
             }
         }
+        // PROG typed streaming partial fields (all optional; validated when present).
+        // Backward compatible: a freeform PROG body with only note/pct still validates.
+        if (this.p === "PROG" && typeof this.body.d === "object" && this.body.d !== null && !Array.isArray(this.body.d)) {
+            const pd = this.body.d;
+            if ("seq" in pd) {
+                const seq = pd.seq;
+                if (typeof seq !== "number" || !Number.isInteger(seq) || seq < PROGRESS_SEQ_MIN) {
+                    errors.push(`PROG body.d.seq must be an integer >= ${PROGRESS_SEQ_MIN} (got ${JSON.stringify(seq)})`);
+                }
+            }
+            if ("pct" in pd) {
+                const pct = pd.pct;
+                if (typeof pct !== "number" || !Number.isInteger(pct) || pct < PROGRESS_PCT_MIN || pct > PROGRESS_PCT_MAX) {
+                    errors.push(`PROG body.d.pct must be an integer ${PROGRESS_PCT_MIN}-${PROGRESS_PCT_MAX} (got ${JSON.stringify(pct)})`);
+                }
+            }
+            if ("final" in pd && typeof pd.final !== "boolean") {
+                errors.push(`PROG body.d.final must be a boolean (got ${JSON.stringify(pd.final)})`);
+            }
+            if ("partial" in pd && (typeof pd.partial !== "object" || pd.partial === null || Array.isArray(pd.partial))) {
+                errors.push(`PROG body.d.partial must be an object (got ${JSON.stringify(pd.partial)})`);
+            }
+            if ("phase" in pd && typeof pd.phase !== "string") {
+                errors.push(`PROG body.d.phase must be a string (got ${JSON.stringify(pd.phase)})`);
+            }
+            if ("note" in pd && typeof pd.note !== "string") {
+                errors.push(`PROG body.d.note must be a string (got ${JSON.stringify(pd.note)})`);
+            }
+        }
         // ctx validation
         if (this.ctx !== undefined) {
             if (typeof this.ctx !== "object" || this.ctx === null) {
@@ -177,14 +319,23 @@ export class CLowlMessage {
             }
             else {
                 const inline = this.ctx.inline;
-                if (inline && inline.length > 2000) {
+                if (inline && inline.length > CTX_INLINE_MAX_LENGTH) {
                     errors.push(`ctx.inline exceeds 2000 character limit (got ${inline.length})`);
                 }
                 const h = this.ctx.hash;
-                if (h && (typeof h !== "string" || h.length !== 64)) {
+                if (h && (typeof h !== "string" || h.length !== CTX_HASH_LENGTH)) {
                     errors.push("ctx.hash must be a 64-char SHA-256 hex string");
                 }
             }
+        }
+        if (this.tid !== undefined && typeof this.tid !== "string") {
+            errors.push(`tid must be a string (got ${JSON.stringify(this.tid)})`);
+        }
+        if (this.pid !== undefined && this.pid !== null && typeof this.pid !== "string") {
+            errors.push(`pid must be a string (got ${JSON.stringify(this.pid)})`);
+        }
+        if (typeof this.det !== "boolean") {
+            errors.push(`det must be a boolean (got ${JSON.stringify(this.det)})`);
         }
         return errors;
     }
@@ -305,6 +456,66 @@ export function createProg(from, to, cid, task, pct, note = "", options = {}) {
     if (note)
         data.note = note;
     return new CLowlMessage("PROG", from, to, cid, task, data, options);
+}
+/**
+ * Create a PROG (Progress) message carrying a typed streaming partial. Only
+ * provided fields are emitted; final is emitted only when true. Consumers can
+ * render the structured fields and audits can fold a stream via reconstructProgress.
+ */
+export function createProgPartial(from, to, cid, task, fields = {}, options = {}) {
+    const data = {};
+    if (fields.seq !== undefined)
+        data.seq = fields.seq;
+    if (fields.phase !== undefined)
+        data.phase = fields.phase;
+    if (fields.pct !== undefined)
+        data.pct = fields.pct;
+    if (fields.partial !== undefined)
+        data.partial = fields.partial;
+    if (fields.final)
+        data.final = true;
+    if (fields.note)
+        data.note = fields.note;
+    return new CLowlMessage("PROG", from, to, cid, task, data, options);
+}
+/**
+ * Fold an ordered list of PROG messages into reconstructed task state.
+ * latestState is a shallow merge of each PROG body.d.partial in the given order
+ * (later wins); isFinal is true if any PROG message carries final === true; gaps
+ * lists the missing seq numbers between the min and max observed integer seq.
+ * Non-PROG messages and messages without the relevant fields are ignored.
+ */
+export function reconstructProgress(messages) {
+    const latestState = {};
+    let isFinal = false;
+    const seqs = [];
+    for (const m of messages) {
+        if (m.p !== "PROG")
+            continue;
+        const d = (m.body?.d ?? {});
+        if (typeof d !== "object" || d === null || Array.isArray(d))
+            continue;
+        const partial = d.partial;
+        if (typeof partial === "object" && partial !== null && !Array.isArray(partial)) {
+            Object.assign(latestState, partial);
+        }
+        if (d.final === true)
+            isFinal = true;
+        const seq = d.seq;
+        if (typeof seq === "number" && Number.isInteger(seq))
+            seqs.push(seq);
+    }
+    let gaps = [];
+    if (seqs.length > 0) {
+        const lo = Math.min(...seqs);
+        const hi = Math.max(...seqs);
+        const present = new Set(seqs);
+        for (let n = lo; n <= hi; n++) {
+            if (!present.has(n))
+                gaps.push(n);
+        }
+    }
+    return { latestState, isFinal, gaps };
 }
 /** Create a CAPS (Capabilities) message. Broadcasts to '*'. */
 export function createCaps(from, supports, options = {}) {

@@ -10,6 +10,8 @@ import {
   createErr,
   createDlgt,
   createProg,
+  createProgPartial,
+  reconstructProgress,
   createCaps,
   createCncl,
   createInf,
@@ -221,6 +223,27 @@ describe("Factory Functions", () => {
     expect(msg.isValid()).toBe(true);
   });
 
+  it("createProgPartial emits only provided typed fields and validates", () => {
+    const msg = createProgPartial("radar", "oscar", cid, "search", {
+      seq: 2,
+      phase: "indexing",
+      pct: 40,
+      partial: { found: 3 },
+    });
+    expect(msg.p).toBe("PROG");
+    expect(msg.body.d).toEqual({ seq: 2, phase: "indexing", pct: 40, partial: { found: 3 } });
+    expect("final" in msg.body.d).toBe(false);
+    expect(msg.isValid()).toBe(true);
+  });
+
+  it("createProgPartial emits final only when true", () => {
+    const notFinal = createProgPartial("radar", "oscar", cid, "search", { seq: 0, final: false });
+    expect("final" in notFinal.body.d).toBe(false);
+    const isFinal = createProgPartial("radar", "oscar", cid, "search", { seq: 1, final: true });
+    expect(isFinal.body.d.final).toBe(true);
+    expect(isFinal.isValid()).toBe(true);
+  });
+
   it("createCaps creates CAPS message broadcasting to *", () => {
     const msg = createCaps("radar", ["search:web", "analyze:trend"]);
     expect(msg.p).toBe("CAPS");
@@ -329,5 +352,49 @@ describe("toHuman", () => {
     const msg = createInf("oscar", ["radar", "muse", "ink"], "c1", "notify", {}, { ts: 1709078400 });
     const human = msg.toHuman();
     expect(human).toContain("[radar, muse, ink]");
+  });
+});
+
+describe("reconstructProgress", () => {
+  const cid = generateCid();
+
+  it("folds partials into latest merged state", () => {
+    const stream = [
+      createProgPartial("radar", "oscar", cid, "search", { seq: 0, partial: { found: 1 } }),
+      createProgPartial("radar", "oscar", cid, "search", { seq: 1, partial: { found: 3, scanned: 10 } }),
+    ];
+    const { latestState, isFinal, gaps } = reconstructProgress(stream);
+    expect(latestState).toEqual({ found: 3, scanned: 10 });
+    expect(isFinal).toBe(false);
+    expect(gaps).toEqual([]);
+  });
+
+  it("reports missing seq numbers as gaps", () => {
+    const stream = [
+      createProgPartial("radar", "oscar", cid, "search", { seq: 0 }),
+      createProgPartial("radar", "oscar", cid, "search", { seq: 1 }),
+      createProgPartial("radar", "oscar", cid, "search", { seq: 4 }),
+    ];
+    const { gaps } = reconstructProgress(stream);
+    expect(gaps).toEqual([2, 3]);
+  });
+
+  it("sets isFinal when any partial is final and ignores non-PROG", () => {
+    const stream = [
+      createReq("oscar", "radar", cid, "search"),
+      createProgPartial("radar", "oscar", cid, "search", { seq: 0, partial: { found: 2 } }),
+      createProgPartial("radar", "oscar", cid, "search", { seq: 1, partial: { found: 8 }, final: true }),
+    ];
+    const { latestState, isFinal, gaps } = reconstructProgress(stream);
+    expect(latestState).toEqual({ found: 8 });
+    expect(isFinal).toBe(true);
+    expect(gaps).toEqual([]);
+  });
+
+  it("returns empty result for no PROG messages", () => {
+    const { latestState, isFinal, gaps } = reconstructProgress([]);
+    expect(latestState).toEqual({});
+    expect(isFinal).toBe(false);
+    expect(gaps).toEqual([]);
   });
 });

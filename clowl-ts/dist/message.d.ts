@@ -3,7 +3,7 @@
  *
  * Mirrors the Python reference library. Zero runtime dependencies.
  */
-import { type Performative, type DelegationMode, type Recipient, type CLowlBody, type CLowlContext, type CLowlMessageData, type CLowlMessageOptions } from "./types.js";
+import { type Performative, type DelegationMode, type Recipient, type CLowlBody, type CLowlContext, type CLowlMessageData, type CLowlMessageOptions, type CoercionWarning } from "./types.js";
 /**
  * Generate a time-ordered message ID (UUIDv7-style).
  * Format: <timestamp_ms_hex>-7<3hex>-<4hex>-<4hex>-<12hex>
@@ -28,13 +28,22 @@ export declare class CLowlMessage {
     readonly ctx: CLowlContext | undefined;
     readonly auth: string | undefined;
     readonly det: boolean;
+    coercionWarnings: CoercionWarning[];
     constructor(p: Performative, from: string, to: Recipient, cid: string, bodyT: string, bodyD?: Record<string, unknown>, options?: CLowlMessageOptions);
     /** Convert to a plain object suitable for JSON serialization. */
     toDict(): CLowlMessageData;
     /** Serialize to a JSON string. */
     toJson(indent?: number): string;
     /** Construct a CLowlMessage from a plain object (e.g., parsed JSON). */
-    static fromDict(data: CLowlMessageData): CLowlMessage;
+    static fromDict(data: CLowlMessageData, options?: {
+        lenient?: boolean;
+    }): CLowlMessage;
+    /**
+     * Lenient parse: coerce near-miss payloads into the declared schema and record
+     * the original defects as coercionWarnings so audits can see what was changed.
+     * Strict fromDict stays the default and is unchanged.
+     */
+    static parseLenient(data: CLowlMessageData): CLowlMessage;
     /** Construct a CLowlMessage from a JSON string. */
     static fromJson(jsonStr: string): CLowlMessage;
     /** Validate the message. Returns a list of error strings (empty = valid). */
@@ -57,6 +66,35 @@ export declare function createErr(from: string, to: string, cid: string, code: s
 export declare function createDlgt(from: string, to: string, cid: string, task: string, delegationMode?: DelegationMode, data?: Record<string, unknown>, options?: CLowlMessageOptions): CLowlMessage;
 /** Create a PROG (Progress) message. */
 export declare function createProg(from: string, to: string, cid: string, task: string, pct?: number, note?: string, options?: CLowlMessageOptions): CLowlMessage;
+/** Typed streaming partial fields for a PROG body. All optional. */
+export interface ProgressPartialInput {
+    seq?: number;
+    phase?: string;
+    pct?: number;
+    partial?: Record<string, unknown>;
+    final?: boolean;
+    note?: string;
+}
+/**
+ * Create a PROG (Progress) message carrying a typed streaming partial. Only
+ * provided fields are emitted; final is emitted only when true. Consumers can
+ * render the structured fields and audits can fold a stream via reconstructProgress.
+ */
+export declare function createProgPartial(from: string, to: string, cid: string, task: string, fields?: ProgressPartialInput, options?: CLowlMessageOptions): CLowlMessage;
+/** Result of folding an ordered list of PROG partial messages. */
+export interface ProgressReconstruction {
+    latestState: Record<string, unknown>;
+    isFinal: boolean;
+    gaps: number[];
+}
+/**
+ * Fold an ordered list of PROG messages into reconstructed task state.
+ * latestState is a shallow merge of each PROG body.d.partial in the given order
+ * (later wins); isFinal is true if any PROG message carries final === true; gaps
+ * lists the missing seq numbers between the min and max observed integer seq.
+ * Non-PROG messages and messages without the relevant fields are ignored.
+ */
+export declare function reconstructProgress(messages: CLowlMessage[]): ProgressReconstruction;
 /** Create a CAPS (Capabilities) message. Broadcasts to '*'. */
 export declare function createCaps(from: string, supports: string[], options?: CLowlMessageOptions): CLowlMessage;
 /** Create a CNCL (Cancel) message. */
