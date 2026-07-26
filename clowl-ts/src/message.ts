@@ -18,6 +18,7 @@ import {
   type CLowlMessageOptions,
   type CoercionWarning,
 } from "./types.js";
+import { CTX_INLINE_MAX_LENGTH, CTX_HASH_LENGTH } from "./generated.js";
 
 // ---------------------------------------------------------------------------
 // ID Generation
@@ -319,11 +320,11 @@ export class CLowlMessage {
         errors.push("ctx must be an object with ref/inline/hash fields");
       } else {
         const inline = this.ctx.inline;
-        if (inline && inline.length > 2000) {
+        if (inline && inline.length > CTX_INLINE_MAX_LENGTH) {
           errors.push(`ctx.inline exceeds 2000 character limit (got ${inline.length})`);
         }
         const h = this.ctx.hash;
-        if (h && (typeof h !== "string" || h.length !== 64)) {
+        if (h && (typeof h !== "string" || h.length !== CTX_HASH_LENGTH)) {
           errors.push("ctx.hash must be a 64-char SHA-256 hex string");
         }
       }
