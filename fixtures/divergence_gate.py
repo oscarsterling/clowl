@@ -52,16 +52,19 @@ def main() -> int:
 
     disagreements = []
     for key in sorted(ts_keys):
-        if ts[key] != py[key]:
-            disagreements.append((key, ts[key], py[key]))
+        for leg in ("strict", "lenient"):
+            ts_v = ts[key].get(leg) if isinstance(ts[key], dict) else ts[key]
+            py_v = py[key].get(leg) if isinstance(py[key], dict) else py[key]
+            if ts_v != py_v:
+                disagreements.append((key, leg, ts_v, py_v))
 
     if disagreements:
-        for case_id, ts_v, py_v in disagreements:
-            print(f"DIVERGENCE: {case_id} ts={ts_v} py={py_v}")
+        for case_id, leg, ts_v, py_v in disagreements:
+            print(f"DIVERGENCE: {case_id} [{leg}] ts={ts_v} py={py_v}")
         return 1
 
     n = len(ts_keys)
-    print(f"divergence gate: OK - {n} cases agree across TS and Python")
+    print(f"divergence gate: OK - {n} cases agree across TS and Python (strict + lenient)")
     return 0
 
 
