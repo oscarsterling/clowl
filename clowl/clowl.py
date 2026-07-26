@@ -69,16 +69,42 @@ PERFORMATIVE_NAMES = {
 # ID generation
 # ---------------------------------------------------------------------------
 
+# UUIDv7 monotonicity state. Within a single millisecond the timestamp prefix is
+# identical, so generate_mid increments the previous 92-bit random tail by 1
+# instead of drawing a fresh one, keeping message IDs strictly ordered for audit
+# logs.
+_last_mid_ms = -1
+_last_mid_tail = 0
+_MID_TAIL_MAX = (1 << 92) - 1
+
+
 def generate_mid() -> str:
     """Generate a time-ordered message ID (UUIDv7-style).
 
-    Format: <timestamp_ms_hex>-<4-hex-groups from uuid4>
-    Sorts lexicographically by creation time.
+    Format: <timestamp_ms_hex>-7<3hex>-<4hex>-<4hex>-<12hex>
+    Sorts lexicographically by creation time. Within the same millisecond the
+    random tail is incremented so consecutively generated IDs are strictly
+    ordered (monotonic), which callers rely on for audit ordering.
     """
+    global _last_mid_ms, _last_mid_tail
     ts_ms = int(time.time() * 1000)
-    rand  = uuid.uuid4().hex
-    # UUIDv7-style: 48-bit timestamp prefix + version + random
-    return f"{ts_ms:012x}-7{rand[1:4]}-{rand[4:8]}-{rand[8:12]}-{rand[12:24]}"
+    if ts_ms > _last_mid_ms:
+        _last_mid_ms = ts_ms
+        _last_mid_tail = uuid.uuid4().int & _MID_TAIL_MAX
+    else:
+        # Same millisecond, or the clock moved backward: freeze the timestamp at
+        # the last value and increment the tail so ordering never regresses.
+        ts_ms = _last_mid_ms
+        if _last_mid_tail >= _MID_TAIL_MAX:
+            # Tail space exhausted within one millisecond (not realistic in
+            # practice): step the timestamp forward and redraw.
+            _last_mid_ms += 1
+            ts_ms = _last_mid_ms
+            _last_mid_tail = uuid.uuid4().int & _MID_TAIL_MAX
+        else:
+            _last_mid_tail += 1
+    tail = f"{_last_mid_tail:023x}"
+    return f"{ts_ms:012x}-7{tail[0:3]}-{tail[3:7]}-{tail[7:11]}-{tail[11:23]}"
 
 
 def generate_cid() -> str:
