@@ -30,16 +30,46 @@ import {
 // ID Generation
 // ---------------------------------------------------------------------------
 
+// UUIDv7 monotonicity state. Within a single millisecond the timestamp prefix
+// is identical, so we increment the previous 92-bit random tail by 1 instead of
+// drawing a fresh one. This keeps message IDs strictly ordered for audit logs.
+let _lastMidMs = -1;
+let _lastMidTail = 0n;
+const _MID_TAIL_MAX = (1n << 92n) - 1n;
+
+function randomTail(): bigint {
+  return BigInt("0x" + randomHex(23));
+}
+
 /**
  * Generate a time-ordered message ID (UUIDv7-style).
  * Format: <timestamp_ms_hex>-7<3hex>-<4hex>-<4hex>-<12hex>
- * Sorts lexicographically by creation time.
+ * Sorts lexicographically by creation time. Within the same millisecond the
+ * random tail is incremented so consecutively generated IDs are strictly
+ * ordered (monotonic), which callers rely on for audit ordering.
  */
 export function generateMid(): string {
-  const tsMs = Date.now();
-  const rand = randomHex(24);
+  let tsMs = Date.now();
+  if (tsMs > _lastMidMs) {
+    _lastMidMs = tsMs;
+    _lastMidTail = randomTail();
+  } else {
+    // Same millisecond, or the clock moved backward: freeze the timestamp at
+    // the last value and increment the tail so ordering never regresses.
+    tsMs = _lastMidMs;
+    if (_lastMidTail >= _MID_TAIL_MAX) {
+      // Tail space exhausted within one millisecond (not realistic in
+      // practice): step the timestamp forward and redraw.
+      _lastMidMs += 1;
+      tsMs = _lastMidMs;
+      _lastMidTail = randomTail();
+    } else {
+      _lastMidTail += 1n;
+    }
+  }
   const tsHex = tsMs.toString(16).padStart(12, "0");
-  return `${tsHex}-7${rand.slice(1, 4)}-${rand.slice(4, 8)}-${rand.slice(8, 12)}-${rand.slice(12, 24)}`;
+  const tail = _lastMidTail.toString(16).padStart(23, "0");
+  return `${tsHex}-7${tail.slice(0, 3)}-${tail.slice(3, 7)}-${tail.slice(7, 11)}-${tail.slice(11, 23)}`;
 }
 
 /** Generate a conversation ID. */
