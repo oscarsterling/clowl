@@ -624,10 +624,10 @@ def reconstruct_progress(messages) -> "ProgressReconstruction":
 
 
 # ---------------------------------------------------------------------------
-# __main__ — example usage
+# __main__ - example usage
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def _demo() -> None:
     print("=== CLowl v0.2 Reference Library — Example Usage ===\n")
 
     # Shared conversation / trace IDs
@@ -725,3 +725,7 @@ if __name__ == "__main__":
     # 11. Show full JSON for the REQ
     print("11. Full JSON for REQ message:")
     print(req.to_json())
+
+
+if __name__ == "__main__":
+    _demo()
