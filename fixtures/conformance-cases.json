@@ -1,0 +1,466 @@
+{
+  "_meta": {
+    "description": "CLowl shared conformance fixture suite. Cases in the intersection where the two hand-maintained CLASS validators (TS CLowlMessage.validate / Python CLowlMessage.validate) agree. Consumed by both SDK runners plus fixtures/divergence_gate.py. Verdict vocab: valid | invalid | roundtrip_ok | roundtrip_mismatch.",
+    "conformance_pair": "TS src/message.ts CLowlMessage.validate <-> Python clowl.py CLowlMessage.validate. NOT TS schema.ts validateSchema() (TS-only, stricter, no Python analog).",
+    "kept_out": "Latent divergences reserved for OSA-1153 item 1: pid:null handling, unknown/extra fields, wrong clowl version (Python hardcodes 0.2), non-string tid/pid/det, float ts (TS accepts, Python rejects). Also 'missing mid' is NOT testable as invalid: both constructors auto-generate mid when falsy/nullish, so it validates valid in both. i02 tests the empty-string 'from' validate path instead (distinct from i04 missing-from construction path).",
+    "classes": {
+      "valid": "run validate() -> expect valid",
+      "invalid": "run validate() (wrap construction in try/except -> invalid) -> expect invalid",
+      "coercible": "invalid under strict validation today; expected_coercion annotates the intended OSA-1153 item 1 normalization -> expect invalid now",
+      "roundtrip": "if invalid -> invalid; else compare parse->toDict() against expected_roundtrip -> roundtrip_ok | roundtrip_mismatch"
+    }
+  },
+  "cases": [
+    {
+      "id": "v01_req_minimal",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-v01",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "v02_dlgt_with_mode",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-v02",
+        "ts": 1709078400,
+        "p": "DLGT",
+        "from": "oscar",
+        "to": "muse",
+        "cid": "conv-1",
+        "body": { "t": "analyze", "d": { "delegation_mode": "transfer" } }
+      }
+    },
+    {
+      "id": "v03_caps_broadcast",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-v03",
+        "ts": 1709078400,
+        "p": "CAPS",
+        "from": "radar",
+        "to": "*",
+        "cid": "system",
+        "body": { "t": "capabilities", "d": { "supports": ["search:web"], "clowl": "0.2" } }
+      }
+    },
+    {
+      "id": "v04_multicast_array",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-v04",
+        "ts": 1709078400,
+        "p": "INF",
+        "from": "oscar",
+        "to": ["radar", "muse", "ink"],
+        "cid": "conv-1",
+        "body": { "t": "notify", "d": { "message": "hi" } }
+      }
+    },
+    {
+      "id": "v05_with_ctx_hash",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-v05",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "muse",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} },
+        "ctx": {
+          "ref": "research/x.md",
+          "inline": null,
+          "hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        }
+      }
+    },
+    {
+      "id": "v06_ack_empty_d",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-v06",
+        "ts": 1709078400,
+        "p": "ACK",
+        "from": "radar",
+        "to": "oscar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "i01_bad_performative",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i01",
+        "ts": 1709078400,
+        "p": "XXX",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "i02_empty_from",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "note": "Substitutes the inherited i02_missing_mid, which is not buildable as invalid (both constructors auto-generate mid). Empty-string from exercises the validate() required-field path, distinct from i04 missing-from (construction path).",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i02",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "i03_missing_p",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "note": "Python from_dict raises KeyError on missing p; runner catches -> invalid. TS yields undefined p -> validate fails.",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i03",
+        "ts": 1709078400,
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "i04_missing_from",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i04",
+        "ts": 1709078400,
+        "p": "REQ",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "i05_missing_to",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i05",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "i06_missing_cid",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i06",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "i07_ts_negative",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i07",
+        "ts": -5,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "i08_body_missing_t",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i08",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "d": {} }
+      }
+    },
+    {
+      "id": "i09_body_d_not_object",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i09",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": "notobj" }
+      }
+    },
+    {
+      "id": "i10_dlgt_missing_mode",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i10",
+        "ts": 1709078400,
+        "p": "DLGT",
+        "from": "oscar",
+        "to": "muse",
+        "cid": "conv-1",
+        "body": { "t": "analyze", "d": {} }
+      }
+    },
+    {
+      "id": "i11_empty_to_array",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i11",
+        "ts": 1709078400,
+        "p": "INF",
+        "from": "oscar",
+        "to": [],
+        "cid": "conv-1",
+        "body": { "t": "notify", "d": {} }
+      }
+    },
+    {
+      "id": "i12_ctx_hash_bad_len",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-i12",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} },
+        "ctx": { "ref": null, "inline": null, "hash": "abc" }
+      }
+    },
+    {
+      "id": "i13_non_object",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "note": "Top-level value is not an object. Python from_dict raises AttributeError; TS constructs an all-undefined message. Both -> invalid.",
+      "input": "not-an-object"
+    },
+    {
+      "id": "c01_ts_as_string",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_coercion": { "field": "ts", "from": "1709078400", "to": 1709078400, "rule": "numeric-string-to-int" },
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-c01",
+        "ts": "1709078400",
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "c02_perf_lowercase",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_coercion": { "field": "p", "from": "req", "to": "REQ", "rule": "uppercase-performative" },
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-c02",
+        "ts": 1709078400,
+        "p": "req",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "c03_perf_trailing_space",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_coercion": { "field": "p", "from": "REQ ", "to": "REQ", "rule": "trim-performative" },
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-c03",
+        "ts": 1709078400,
+        "p": "REQ ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "c04_delegation_mode_uppercase",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_coercion": { "field": "body.d.delegation_mode", "from": "TRANSFER", "to": "transfer", "rule": "lowercase-delegation-mode" },
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-c04",
+        "ts": 1709078400,
+        "p": "DLGT",
+        "from": "oscar",
+        "to": "muse",
+        "cid": "conv-1",
+        "body": { "t": "analyze", "d": { "delegation_mode": "TRANSFER" } }
+      }
+    },
+    {
+      "id": "r01_req_roundtrip",
+      "class": "roundtrip",
+      "expected_verdict": "roundtrip_ok",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-r01",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": { "q": "x" } }
+      },
+      "expected_roundtrip": {
+        "clowl": "0.2",
+        "mid": "m-r01",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": { "q": "x" } }
+      }
+    },
+    {
+      "id": "r02_dlgt_roundtrip",
+      "class": "roundtrip",
+      "expected_verdict": "roundtrip_ok",
+      "note": "tid preserved through to_dict.",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-r02",
+        "ts": 1709078400,
+        "tid": "trace-1",
+        "p": "DLGT",
+        "from": "oscar",
+        "to": "muse",
+        "cid": "conv-1",
+        "body": { "t": "analyze", "d": { "delegation_mode": "transfer", "target": "angle" } }
+      },
+      "expected_roundtrip": {
+        "clowl": "0.2",
+        "mid": "m-r02",
+        "ts": 1709078400,
+        "p": "DLGT",
+        "from": "oscar",
+        "to": "muse",
+        "cid": "conv-1",
+        "body": { "t": "analyze", "d": { "delegation_mode": "transfer", "target": "angle" } },
+        "tid": "trace-1"
+      }
+    },
+    {
+      "id": "r03_multicast_roundtrip",
+      "class": "roundtrip",
+      "expected_verdict": "roundtrip_ok",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-r03",
+        "ts": 1709078400,
+        "p": "INF",
+        "from": "oscar",
+        "to": ["radar", "muse"],
+        "cid": "conv-1",
+        "body": { "t": "notify", "d": {} }
+      },
+      "expected_roundtrip": {
+        "clowl": "0.2",
+        "mid": "m-r03",
+        "ts": 1709078400,
+        "p": "INF",
+        "from": "oscar",
+        "to": ["radar", "muse"],
+        "cid": "conv-1",
+        "body": { "t": "notify", "d": {} }
+      }
+    },
+    {
+      "id": "r04_det_true_roundtrip",
+      "class": "roundtrip",
+      "expected_verdict": "roundtrip_ok",
+      "note": "det:true preserved through to_dict.",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-r04",
+        "ts": 1709078400,
+        "p": "DONE",
+        "from": "radar",
+        "to": "oscar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": { "sources": 8 } },
+        "det": true
+      },
+      "expected_roundtrip": {
+        "clowl": "0.2",
+        "mid": "m-r04",
+        "ts": 1709078400,
+        "p": "DONE",
+        "from": "radar",
+        "to": "oscar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": { "sources": 8 } },
+        "det": true
+      }
+    }
+  ]
+}
