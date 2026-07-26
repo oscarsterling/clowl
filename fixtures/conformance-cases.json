@@ -591,6 +591,178 @@
         "body": { "t": "search", "d": { "sources": 8 } },
         "det": true
       }
+    },
+    {
+      "id": "p01_prog_freeform_legacy",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "expected_lenient_verdict": "valid",
+      "note": "Legacy freeform PROG (pct + note only) stays valid; new typed fields are optional and backward compatible.",
+      "input": {
+        "clowl": "0.2", "mid": "m-p01", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "pct": 50, "note": "indexed 4 of 8" } }
+      }
+    },
+    {
+      "id": "p02_prog_typed_valid",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "expected_lenient_verdict": "valid",
+      "note": "Typed streaming partial with all fields well-formed.",
+      "input": {
+        "clowl": "0.2", "mid": "m-p02", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "seq": 0, "phase": "indexing", "pct": 25, "partial": { "found": 2 }, "final": false } }
+      }
+    },
+    {
+      "id": "p03_prog_typed_final",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "expected_lenient_verdict": "valid",
+      "note": "Terminal typed partial: pct 100, final true.",
+      "input": {
+        "clowl": "0.2", "mid": "m-p03", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "seq": 3, "phase": "done", "pct": 100, "partial": { "found": 8 }, "final": true } }
+      }
+    },
+    {
+      "id": "p04_prog_empty_d",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "expected_lenient_verdict": "valid",
+      "note": "Bare PROG with empty d is valid (every typed field optional).",
+      "input": {
+        "clowl": "0.2", "mid": "m-p04", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "p05_prog_pct_out_of_range",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "valid",
+      "note": "pct 150 is out of 0-100: strict invalid, lenient clamps to 100.",
+      "expected_coercions": [
+        { "field": "body.d.pct", "original": 150, "coerced": 100, "reason": "clamp-pct-range" }
+      ],
+      "input": {
+        "clowl": "0.2", "mid": "m-p05", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "seq": 1, "pct": 150 } }
+      }
+    },
+    {
+      "id": "p06_prog_seq_numeric_string",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "valid",
+      "note": "seq as a numeric string: strict invalid, lenient coerces to int.",
+      "expected_coercions": [
+        { "field": "body.d.seq", "original": "2", "coerced": 2, "reason": "numeric-string-to-seq" }
+      ],
+      "input": {
+        "clowl": "0.2", "mid": "m-p06", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "seq": "2", "pct": 10 } }
+      }
+    },
+    {
+      "id": "p07_prog_pct_numeric_string",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "valid",
+      "note": "pct as an in-range numeric string: strict invalid, lenient coerces to int.",
+      "expected_coercions": [
+        { "field": "body.d.pct", "original": "50", "coerced": 50, "reason": "numeric-string-to-pct" }
+      ],
+      "input": {
+        "clowl": "0.2", "mid": "m-p07", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "pct": "50" } }
+      }
+    },
+    {
+      "id": "p08_prog_final_not_bool",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "valid",
+      "note": "final as a truthy string: strict invalid, lenient coerces to boolean true.",
+      "expected_coercions": [
+        { "field": "body.d.final", "original": "yes", "coerced": true, "reason": "coerce-final-to-bool" }
+      ],
+      "input": {
+        "clowl": "0.2", "mid": "m-p08", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "final": "yes", "pct": 10 } }
+      }
+    },
+    {
+      "id": "p09_prog_seq_non_integral",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "invalid",
+      "note": "Non-integral seq is invalid in both modes (lenient does not coerce a float, mirrors float ts).",
+      "input": {
+        "clowl": "0.2", "mid": "m-p09", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "seq": 2.5 } }
+      }
+    },
+    {
+      "id": "p10_prog_seq_bool",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "invalid",
+      "note": "Boolean seq is invalid in both modes and both SDKs (Python must exclude bool from its int check).",
+      "input": {
+        "clowl": "0.2", "mid": "m-p10", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "seq": true } }
+      }
+    },
+    {
+      "id": "p11_prog_pct_nonnumeric_string",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "invalid",
+      "note": "Non-numeric pct string is invalid in both modes (not coercible).",
+      "input": {
+        "clowl": "0.2", "mid": "m-p11", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "pct": "abc" } }
+      }
+    },
+    {
+      "id": "p12_prog_partial_not_object",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "invalid",
+      "note": "partial must be an object; a string is invalid in both modes (not coercible).",
+      "input": {
+        "clowl": "0.2", "mid": "m-p12", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "partial": "x" } }
+      }
+    },
+    {
+      "id": "p13_prog_typed_roundtrip",
+      "class": "roundtrip",
+      "expected_verdict": "roundtrip_ok",
+      "note": "Typed partial survives to_dict roundtrip unchanged.",
+      "input": {
+        "clowl": "0.2", "mid": "m-p13", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "seq": 1, "phase": "indexing", "pct": 40, "partial": { "found": 3 } } }
+      },
+      "expected_roundtrip": {
+        "clowl": "0.2", "mid": "m-p13", "ts": 1709078400, "p": "PROG",
+        "from": "radar", "to": "oscar", "cid": "conv-1",
+        "body": { "t": "search", "d": { "seq": 1, "phase": "indexing", "pct": 40, "partial": { "found": 3 } } }
+      }
     }
   ]
 }

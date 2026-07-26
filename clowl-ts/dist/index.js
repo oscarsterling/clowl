@@ -9,7 +9,7 @@
 // Types
 export { CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES, PERFORMATIVE_NAMES, CONVERSATION_STATES, STATE_EVENTS, TERMINAL_STATES, } from "./types.js";
 // Message creation and validation
-export { CLowlMessage, generateMid, generateCid, generateTid, createReq, createAck, createDone, createErr, createDlgt, createProg, createCaps, createCncl, createInf, createQry, } from "./message.js";
+export { CLowlMessage, generateMid, generateCid, generateTid, createReq, createAck, createDone, createErr, createDlgt, createProg, createProgPartial, reconstructProgress, createCaps, createCncl, createInf, createQry, } from "./message.js";
 // State machine
 export { ConversationTracker, InvalidTransitionError, getNextState, getAllTransitions, } from "./state-machine.js";
 // Translator

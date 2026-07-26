@@ -18,7 +18,13 @@ import {
   type CLowlMessageOptions,
   type CoercionWarning,
 } from "./types.js";
-import { CTX_INLINE_MAX_LENGTH, CTX_HASH_LENGTH } from "./generated.js";
+import {
+  CTX_INLINE_MAX_LENGTH,
+  CTX_HASH_LENGTH,
+  PROGRESS_PCT_MIN,
+  PROGRESS_PCT_MAX,
+  PROGRESS_SEQ_MIN,
+} from "./generated.js";
 
 // ---------------------------------------------------------------------------
 // ID Generation
@@ -223,6 +229,39 @@ export class CLowlMessage {
       }
     }
 
+    // PROG typed partial coercions (scoped to PROG): numeric-string seq/pct to int,
+    // out-of-range pct clamped into 0-100, non-boolean final to bool. Clone body/d so input is never mutated.
+    if (work.p === "PROG" && body && typeof body === "object" && body.d && typeof body.d === "object" && !Array.isArray(body.d)) {
+      const origPd = body.d as Record<string, unknown>;
+      const newPd: Record<string, unknown> = { ...origPd };
+      let pdChanged = false;
+      if (typeof newPd.seq === "string" && /^-?\d+$/.test(newPd.seq.trim())) {
+        const n = parseInt(newPd.seq.trim(), 10);
+        warnings.push({ field: "body.d.seq", original: newPd.seq, coerced: n, reason: "numeric-string-to-seq" });
+        newPd.seq = n;
+        pdChanged = true;
+      }
+      if (typeof newPd.pct === "string" && /^-?\d+$/.test(newPd.pct.trim())) {
+        const n = parseInt(newPd.pct.trim(), 10);
+        warnings.push({ field: "body.d.pct", original: newPd.pct, coerced: n, reason: "numeric-string-to-pct" });
+        newPd.pct = n;
+        pdChanged = true;
+      }
+      if (typeof newPd.pct === "number" && Number.isInteger(newPd.pct) && (newPd.pct < PROGRESS_PCT_MIN || newPd.pct > PROGRESS_PCT_MAX)) {
+        const clamped = Math.max(PROGRESS_PCT_MIN, Math.min(PROGRESS_PCT_MAX, newPd.pct));
+        warnings.push({ field: "body.d.pct", original: newPd.pct, coerced: clamped, reason: "clamp-pct-range" });
+        newPd.pct = clamped;
+        pdChanged = true;
+      }
+      if ("final" in newPd && typeof newPd.final !== "boolean") {
+        const b = Boolean(newPd.final);
+        warnings.push({ field: "body.d.final", original: newPd.final, coerced: b, reason: "coerce-final-to-bool" });
+        newPd.final = b;
+        pdChanged = true;
+      }
+      if (pdChanged) work.body = { ...(body as Record<string, unknown>), d: newPd };
+    }
+
     // tid: stringify non-string (leave null/undefined alone)
     if (work.tid !== undefined && work.tid !== null && typeof work.tid !== "string") {
       const s = String(work.tid);
@@ -311,6 +350,36 @@ export class CLowlMessage {
         errors.push(
           `DLGT messages require body.d.delegation_mode to be one of ${[...VALID_DELEGATION_MODES].sort().join(", ")}, got ${JSON.stringify(mode)}`,
         );
+      }
+    }
+
+    // PROG typed streaming partial fields (all optional; validated when present).
+    // Backward compatible: a freeform PROG body with only note/pct still validates.
+    if (this.p === "PROG" && typeof this.body.d === "object" && this.body.d !== null && !Array.isArray(this.body.d)) {
+      const pd = this.body.d as Record<string, unknown>;
+      if ("seq" in pd) {
+        const seq = pd.seq;
+        if (typeof seq !== "number" || !Number.isInteger(seq) || seq < PROGRESS_SEQ_MIN) {
+          errors.push(`PROG body.d.seq must be an integer >= ${PROGRESS_SEQ_MIN} (got ${JSON.stringify(seq)})`);
+        }
+      }
+      if ("pct" in pd) {
+        const pct = pd.pct;
+        if (typeof pct !== "number" || !Number.isInteger(pct) || pct < PROGRESS_PCT_MIN || pct > PROGRESS_PCT_MAX) {
+          errors.push(`PROG body.d.pct must be an integer ${PROGRESS_PCT_MIN}-${PROGRESS_PCT_MAX} (got ${JSON.stringify(pct)})`);
+        }
+      }
+      if ("final" in pd && typeof pd.final !== "boolean") {
+        errors.push(`PROG body.d.final must be a boolean (got ${JSON.stringify(pd.final)})`);
+      }
+      if ("partial" in pd && (typeof pd.partial !== "object" || pd.partial === null || Array.isArray(pd.partial))) {
+        errors.push(`PROG body.d.partial must be an object (got ${JSON.stringify(pd.partial)})`);
+      }
+      if ("phase" in pd && typeof pd.phase !== "string") {
+        errors.push(`PROG body.d.phase must be a string (got ${JSON.stringify(pd.phase)})`);
+      }
+      if ("note" in pd && typeof pd.note !== "string") {
+        errors.push(`PROG body.d.note must be a string (got ${JSON.stringify(pd.note)})`);
       }
     }
 
@@ -513,6 +582,81 @@ export function createProg(
   if (pct !== undefined) data.pct = pct;
   if (note) data.note = note;
   return new CLowlMessage("PROG", from, to, cid, task, data, options);
+}
+
+/** Typed streaming partial fields for a PROG body. All optional. */
+export interface ProgressPartialInput {
+  seq?: number;
+  phase?: string;
+  pct?: number;
+  partial?: Record<string, unknown>;
+  final?: boolean;
+  note?: string;
+}
+
+/**
+ * Create a PROG (Progress) message carrying a typed streaming partial. Only
+ * provided fields are emitted; final is emitted only when true. Consumers can
+ * render the structured fields and audits can fold a stream via reconstructProgress.
+ */
+export function createProgPartial(
+  from: string,
+  to: string,
+  cid: string,
+  task: string,
+  fields: ProgressPartialInput = {},
+  options: CLowlMessageOptions = {},
+): CLowlMessage {
+  const data: Record<string, unknown> = {};
+  if (fields.seq !== undefined) data.seq = fields.seq;
+  if (fields.phase !== undefined) data.phase = fields.phase;
+  if (fields.pct !== undefined) data.pct = fields.pct;
+  if (fields.partial !== undefined) data.partial = fields.partial;
+  if (fields.final) data.final = true;
+  if (fields.note) data.note = fields.note;
+  return new CLowlMessage("PROG", from, to, cid, task, data, options);
+}
+
+/** Result of folding an ordered list of PROG partial messages. */
+export interface ProgressReconstruction {
+  latestState: Record<string, unknown>;
+  isFinal: boolean;
+  gaps: number[];
+}
+
+/**
+ * Fold an ordered list of PROG messages into reconstructed task state.
+ * latestState is a shallow merge of each PROG body.d.partial in the given order
+ * (later wins); isFinal is true if any PROG message carries final === true; gaps
+ * lists the missing seq numbers between the min and max observed integer seq.
+ * Non-PROG messages and messages without the relevant fields are ignored.
+ */
+export function reconstructProgress(messages: CLowlMessage[]): ProgressReconstruction {
+  const latestState: Record<string, unknown> = {};
+  let isFinal = false;
+  const seqs: number[] = [];
+  for (const m of messages) {
+    if (m.p !== "PROG") continue;
+    const d = (m.body?.d ?? {}) as Record<string, unknown>;
+    if (typeof d !== "object" || d === null || Array.isArray(d)) continue;
+    const partial = d.partial;
+    if (typeof partial === "object" && partial !== null && !Array.isArray(partial)) {
+      Object.assign(latestState, partial as Record<string, unknown>);
+    }
+    if (d.final === true) isFinal = true;
+    const seq = d.seq;
+    if (typeof seq === "number" && Number.isInteger(seq)) seqs.push(seq);
+  }
+  let gaps: number[] = [];
+  if (seqs.length > 0) {
+    const lo = Math.min(...seqs);
+    const hi = Math.max(...seqs);
+    const present = new Set(seqs);
+    for (let n = lo; n <= hi; n++) {
+      if (!present.has(n)) gaps.push(n);
+    }
+  }
+  return { latestState, isFinal, gaps };
 }
 
 /** Create a CAPS (Capabilities) message. Broadcasts to '*'. */

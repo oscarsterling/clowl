@@ -4,12 +4,13 @@
  * Complete type definitions for the CLowl protocol.
  * Zero runtime dependencies. Full type safety, no `any`.
  */
-/** CLowl protocol version */
-export const CLOWL_VERSION = "0.2";
-/** All valid performative codes */
-export const VALID_PERFORMATIVES = [
-    "REQ", "INF", "ACK", "ERR", "DLGT", "DONE", "CNCL", "QRY", "PROG", "CAPS",
-];
+// CLOWL_VERSION, VALID_PERFORMATIVES, and VALID_DELEGATION_MODES are generated
+// from clowl-schema.json (see tools/gen_sdk_layer.py) and re-exported here so
+// the schema is their single source of truth. PERFORMATIVE_NAMES is the
+// human-readable label map, which the schema does not declare, so it stays
+// hand-maintained.
+import { CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES, } from "./generated.js";
+export { CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES };
 /** Human-readable performative names */
 export const PERFORMATIVE_NAMES = {
     REQ: "REQUEST",
@@ -23,8 +24,6 @@ export const PERFORMATIVE_NAMES = {
     PROG: "PROGRESS",
     CAPS: "CAPABILITIES",
 };
-/** Valid delegation modes for DLGT messages */
-export const VALID_DELEGATION_MODES = ["transfer", "fork", "assist"];
 // ---- State Machine Types ----
 /** Conversation states (9 total) */
 export const CONVERSATION_STATES = [

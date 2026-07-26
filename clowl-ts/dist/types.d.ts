@@ -4,16 +4,12 @@
  * Complete type definitions for the CLowl protocol.
  * Zero runtime dependencies. Full type safety, no `any`.
  */
-/** CLowl protocol version */
-export declare const CLOWL_VERSION: "0.2";
-/** All valid performative codes */
-export declare const VALID_PERFORMATIVES: readonly ["REQ", "INF", "ACK", "ERR", "DLGT", "DONE", "CNCL", "QRY", "PROG", "CAPS"];
+import { CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES } from "./generated.js";
+export { CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES };
 /** Performative type union */
 export type Performative = (typeof VALID_PERFORMATIVES)[number];
 /** Human-readable performative names */
 export declare const PERFORMATIVE_NAMES: Record<Performative, string>;
-/** Valid delegation modes for DLGT messages */
-export declare const VALID_DELEGATION_MODES: readonly ["transfer", "fork", "assist"];
 /** Delegation mode type union */
 export type DelegationMode = (typeof VALID_DELEGATION_MODES)[number];
 /** Context object for referencing shared state */
@@ -45,9 +41,13 @@ export interface CLowlDelegationData {
     delegation_mode: DelegationMode;
     [key: string]: unknown;
 }
-/** PROG body data */
+/** PROG body data (typed streaming partial; all fields optional). */
 export interface CLowlProgressData {
+    seq?: number;
+    phase?: string;
     pct?: number;
+    partial?: Record<string, unknown>;
+    final?: boolean;
     note?: string;
 }
 /** Recipient type: single agent, broadcast, or multicast */
@@ -70,6 +70,7 @@ export interface CLowlMessageData {
 }
 /** Options for creating a CLowlMessage */
 export interface CLowlMessageOptions {
+    clowl?: string;
     mid?: string;
     ts?: number;
     tid?: string;
@@ -82,6 +83,12 @@ export interface CLowlMessageOptions {
 export interface ValidationError {
     field: string;
     message: string;
+}
+export interface CoercionWarning {
+    field: string;
+    original: unknown;
+    coerced: unknown;
+    reason: string;
 }
 /** Conversation states (9 total) */
 export declare const CONVERSATION_STATES: readonly ["IDLE", "REQUESTED", "ACKNOWLEDGED", "IN_PROGRESS", "DELEGATED", "COMPLETED", "FAILED", "CANCELLED", "RETRYING"];

@@ -145,6 +145,59 @@
       }
     }
   },
+  "definitions": {
+    "progress_partial": {
+      "type": "object",
+      "description": "Typed streaming partial payload for PROG (progress) bodies. All fields optional and backward compatible; validated strictly when present so consumers can render structured progress and audits can reconstruct task state over time.",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonic sequence number per task. Enables ordering and gap detection during reconstruction."
+        },
+        "phase": {
+          "type": "string",
+          "description": "Current phase label, e.g. 'indexing', 'summarizing'."
+        },
+        "pct": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Percent complete, 0 to 100 inclusive."
+        },
+        "partial": {
+          "type": "object",
+          "description": "The typed partial result accumulated so far."
+        },
+        "final": {
+          "type": "boolean",
+          "default": false,
+          "description": "True on the terminal partial for this task."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional freeform progress note, so plain-text progress still has a sanctioned home."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "p": { "const": "PROG" } },
+        "required": ["p"]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "properties": {
+              "d": { "$ref": "#/definitions/progress_partial" }
+            }
+          }
+        }
+      }
+    }
+  ],
   "examples": [
     {
       "clowl": "0.2",

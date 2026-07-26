@@ -72,9 +72,13 @@ export interface CLowlDelegationData {
   [key: string]: unknown;
 }
 
-/** PROG body data */
+/** PROG body data (typed streaming partial; all fields optional). */
 export interface CLowlProgressData {
+  seq?: number;
+  phase?: string;
   pct?: number;
+  partial?: Record<string, unknown>;
+  final?: boolean;
   note?: string;
 }
 

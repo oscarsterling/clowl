@@ -7,8 +7,9 @@
  * @packageDocumentation
  */
 export { CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES, PERFORMATIVE_NAMES, CONVERSATION_STATES, STATE_EVENTS, TERMINAL_STATES, } from "./types.js";
-export type { Performative, DelegationMode, Recipient, CLowlContext, CLowlBody, CLowlErrorData, CLowlCapsData, CLowlDelegationData, CLowlProgressData, CLowlMessageData, CLowlMessageOptions, ValidationError, ConversationState, StateEvent, StateTransition, } from "./types.js";
-export { CLowlMessage, generateMid, generateCid, generateTid, createReq, createAck, createDone, createErr, createDlgt, createProg, createCaps, createCncl, createInf, createQry, } from "./message.js";
+export type { Performative, DelegationMode, Recipient, CLowlContext, CLowlBody, CLowlErrorData, CLowlCapsData, CLowlDelegationData, CLowlProgressData, CLowlMessageData, CLowlMessageOptions, CoercionWarning, ValidationError, ConversationState, StateEvent, StateTransition, } from "./types.js";
+export { CLowlMessage, generateMid, generateCid, generateTid, createReq, createAck, createDone, createErr, createDlgt, createProg, createProgPartial, reconstructProgress, createCaps, createCncl, createInf, createQry, } from "./message.js";
+export type { ProgressPartialInput, ProgressReconstruction } from "./message.js";
 export { ConversationTracker, InvalidTransitionError, getNextState, getAllTransitions, } from "./state-machine.js";
 export type { StateHistoryEntry } from "./state-machine.js";
 export { translateToHuman, translateJsonToHuman, translateBatch, translateTrace, translateConversation, parseJsonl, } from "./translator.js";

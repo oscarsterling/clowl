@@ -5,6 +5,7 @@
  * Zero runtime dependencies, no external schema validators.
  */
 import { CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES, } from "./types.js";
+import { REQUIRED_FIELDS, KNOWN_FIELDS, CTX_INLINE_MAX_LENGTH, CTX_HASH_LENGTH, } from "./generated.js";
 /**
  * The CLowl v0.2 JSON Schema as a plain object.
  * Can be exported for use with external validators (Ajv, etc.).
@@ -63,7 +64,7 @@ export function validateSchema(data) {
     }
     const obj = data;
     // Check required fields
-    const required = ["clowl", "mid", "ts", "p", "from", "to", "cid", "body"];
+    const required = REQUIRED_FIELDS;
     for (const field of required) {
         if (!(field in obj)) {
             errors.push(`Missing required field: ${field}`);
@@ -170,7 +171,7 @@ export function validateSchema(data) {
                 if (typeof ctx.inline !== "string") {
                     errors.push("ctx.inline must be a string or null");
                 }
-                else if (ctx.inline.length > 2000) {
+                else if (ctx.inline.length > CTX_INLINE_MAX_LENGTH) {
                     errors.push(`ctx.inline exceeds 2000 character limit (got ${ctx.inline.length})`);
                 }
             }
@@ -178,17 +179,14 @@ export function validateSchema(data) {
                 if (typeof ctx.hash !== "string") {
                     errors.push("ctx.hash must be a string or null");
                 }
-                else if (ctx.hash.length !== 64) {
+                else if (ctx.hash.length !== CTX_HASH_LENGTH) {
                     errors.push(`ctx.hash must be a 64-char SHA-256 hex string (got ${ctx.hash.length} chars)`);
                 }
             }
         }
     }
     // Check for unknown fields
-    const knownFields = new Set([
-        "clowl", "mid", "ts", "p", "from", "to", "cid", "body",
-        "tid", "pid", "ctx", "auth", "det",
-    ]);
+    const knownFields = new Set(KNOWN_FIELDS);
     for (const key of Object.keys(obj)) {
         if (!knownFields.has(key)) {
             errors.push(`Unknown field: ${key}`);

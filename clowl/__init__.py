@@ -22,6 +22,8 @@ from .clowl import (
     create_prog,
     create_caps,
     create_cncl,
+    reconstruct_progress,
+    ProgressReconstruction,
 )
 
 __version__ = CLOWL_VERSION
@@ -43,4 +45,6 @@ __all__ = [
     "create_prog",
     "create_caps",
     "create_cncl",
+    "reconstruct_progress",
+    "ProgressReconstruction",
 ]

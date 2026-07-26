@@ -49,11 +49,15 @@ export {
   createErr,
   createDlgt,
   createProg,
+  createProgPartial,
+  reconstructProgress,
   createCaps,
   createCncl,
   createInf,
   createQry,
 } from "./message.js";
+
+export type { ProgressPartialInput, ProgressReconstruction } from "./message.js";
 
 // State machine
 export {

@@ -59,6 +59,11 @@ def extract(schema: dict) -> dict:
             f"cannot derive ctx.hash length from pattern {hash_pattern!r}"
         )
     hash_len = int(m.group(1))
+    pp = schema["definitions"]["progress_partial"]["properties"]
+    pct_min = pp["pct"]["minimum"]
+    pct_max = pp["pct"]["maximum"]
+    seq_min = pp["seq"]["minimum"]
+    progress_fields = list(pp.keys())
     return {
         "version": version,
         "performatives": performatives,
@@ -68,6 +73,10 @@ def extract(schema: dict) -> dict:
         "known_fields": known_fields,
         "inline_max": inline_max,
         "hash_len": hash_len,
+        "pct_min": pct_min,
+        "pct_max": pct_max,
+        "seq_min": seq_min,
+        "progress_fields": progress_fields,
     }
 
 
@@ -103,6 +112,18 @@ export const CTX_INLINE_MAX_LENGTH = {d["inline_max"]};
 
 /** ctx.hash exact length (schema properties.ctx.properties.hash.pattern). */
 export const CTX_HASH_LENGTH = {d["hash_len"]};
+
+/** PROG pct minimum (schema definitions.progress_partial.properties.pct.minimum). */
+export const PROGRESS_PCT_MIN = {d["pct_min"]};
+
+/** PROG pct maximum (schema definitions.progress_partial.properties.pct.maximum). */
+export const PROGRESS_PCT_MAX = {d["pct_max"]};
+
+/** PROG seq minimum (schema definitions.progress_partial.properties.seq.minimum). */
+export const PROGRESS_SEQ_MIN = {d["seq_min"]};
+
+/** PROG typed partial field names (schema definitions.progress_partial.properties keys). */
+export const PROGRESS_PARTIAL_FIELDS = {ts_tuple(d["progress_fields"])} as const;
 '''
 
 
@@ -144,6 +165,18 @@ CTX_INLINE_MAX_LENGTH = {d["inline_max"]}
 
 # ctx.hash exact length (schema properties.ctx.properties.hash.pattern).
 CTX_HASH_LENGTH = {d["hash_len"]}
+
+# PROG pct minimum (schema definitions.progress_partial.properties.pct.minimum).
+PROGRESS_PCT_MIN = {d["pct_min"]}
+
+# PROG pct maximum (schema definitions.progress_partial.properties.pct.maximum).
+PROGRESS_PCT_MAX = {d["pct_max"]}
+
+# PROG seq minimum (schema definitions.progress_partial.properties.seq.minimum).
+PROGRESS_SEQ_MIN = {d["seq_min"]}
+
+# PROG typed partial field names (schema definitions.progress_partial.properties keys).
+PROGRESS_PARTIAL_FIELDS = {py_tuple(d["progress_fields"])}
 '''
 
 

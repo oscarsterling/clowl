@@ -27,3 +27,15 @@ CTX_INLINE_MAX_LENGTH = 2000
 
 # ctx.hash exact length (schema properties.ctx.properties.hash.pattern).
 CTX_HASH_LENGTH = 64
+
+# PROG pct minimum (schema definitions.progress_partial.properties.pct.minimum).
+PROGRESS_PCT_MIN = 0
+
+# PROG pct maximum (schema definitions.progress_partial.properties.pct.maximum).
+PROGRESS_PCT_MAX = 100
+
+# PROG seq minimum (schema definitions.progress_partial.properties.seq.minimum).
+PROGRESS_SEQ_MIN = 0
+
+# PROG typed partial field names (schema definitions.progress_partial.properties keys).
+PROGRESS_PARTIAL_FIELDS = ("seq", "phase", "pct", "partial", "final", "note",)
