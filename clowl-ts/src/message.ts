@@ -16,6 +16,7 @@ import {
   type CLowlContext,
   type CLowlMessageData,
   type CLowlMessageOptions,
+  type CoercionWarning,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,7 @@ export class CLowlMessage {
   readonly ctx: CLowlContext | undefined;
   readonly auth: string | undefined;
   readonly det: boolean;
+  coercionWarnings: CoercionWarning[] = [];
 
   constructor(
     p: Performative,
@@ -89,7 +91,7 @@ export class CLowlMessage {
     bodyD: Record<string, unknown> = {},
     options: CLowlMessageOptions = {},
   ) {
-    this.clowl = CLOWL_VERSION;
+    this.clowl = options.clowl ?? CLOWL_VERSION;
     this.mid = options.mid ?? generateMid();
     this.ts = options.ts ?? Math.floor(Date.now() / 1000);
     this.p = p;
@@ -134,7 +136,8 @@ export class CLowlMessage {
   }
 
   /** Construct a CLowlMessage from a plain object (e.g., parsed JSON). */
-  static fromDict(data: CLowlMessageData): CLowlMessage {
+  static fromDict(data: CLowlMessageData, options: { lenient?: boolean } = {}): CLowlMessage {
+    if (options.lenient) return CLowlMessage.parseLenient(data);
     const body = data.body ?? { t: "", d: {} };
     const bodyT = body.t ?? "";
     const bodyD = (body.d ?? {}) as Record<string, unknown>;
@@ -146,6 +149,7 @@ export class CLowlMessage {
       bodyT,
       bodyD,
       {
+        clowl: data.clowl,
         mid: data.mid,
         ts: data.ts,
         tid: data.tid,
@@ -155,6 +159,93 @@ export class CLowlMessage {
         det: data.det ?? false,
       },
     );
+  }
+
+  /**
+   * Lenient parse: coerce near-miss payloads into the declared schema and record
+   * the original defects as coercionWarnings so audits can see what was changed.
+   * Strict fromDict stays the default and is unchanged.
+   */
+  static parseLenient(data: CLowlMessageData): CLowlMessage {
+    const warnings: CoercionWarning[] = [];
+    if (typeof data !== "object" || data === null || Array.isArray(data)) {
+      // Non-object input cannot be coerced; build an empty message so validate() fails.
+      const msg = CLowlMessage.fromDict({} as CLowlMessageData);
+      msg.coercionWarnings = warnings;
+      return msg;
+    }
+    const work: Record<string, unknown> = { ...(data as unknown as Record<string, unknown>) };
+
+    // clowl version
+    if (typeof work.clowl === "string" && work.clowl !== CLOWL_VERSION) {
+      warnings.push({ field: "clowl", original: work.clowl, coerced: CLOWL_VERSION, reason: "coerce-clowl-version" });
+      work.clowl = CLOWL_VERSION;
+    }
+
+    // ts: numeric string -> int
+    if (typeof work.ts === "string" && /^-?\d+$/.test(work.ts.trim())) {
+      const n = parseInt(work.ts.trim(), 10);
+      warnings.push({ field: "ts", original: work.ts, coerced: n, reason: "numeric-string-to-int" });
+      work.ts = n;
+    }
+
+    // p: trim then uppercase (only when it lands on a valid performative)
+    if (typeof work.p === "string") {
+      const trimmed = work.p.trim();
+      if (trimmed !== work.p && (VALID_PERFORMATIVES as readonly string[]).includes(trimmed)) {
+        warnings.push({ field: "p", original: work.p, coerced: trimmed, reason: "trim-performative" });
+        work.p = trimmed;
+      } else if (
+        !(VALID_PERFORMATIVES as readonly string[]).includes(work.p as string) &&
+        (VALID_PERFORMATIVES as readonly string[]).includes((work.p as string).toUpperCase())
+      ) {
+        const up = (work.p as string).toUpperCase();
+        warnings.push({ field: "p", original: work.p, coerced: up, reason: "uppercase-performative" });
+        work.p = up;
+      }
+    }
+
+    // body.d.delegation_mode: lowercase (DLGT). Clone body/d so the caller's input is never mutated.
+    const body = (work.body ?? {}) as { t?: unknown; d?: unknown };
+    if (work.p === "DLGT" && body && typeof body === "object" && body.d && typeof body.d === "object") {
+      const origD = body.d as Record<string, unknown>;
+      const mode = origD.delegation_mode;
+      if (
+        typeof mode === "string" &&
+        !(VALID_DELEGATION_MODES as readonly string[]).includes(mode) &&
+        (VALID_DELEGATION_MODES as readonly string[]).includes(mode.toLowerCase())
+      ) {
+        const lower = mode.toLowerCase();
+        warnings.push({ field: "body.d.delegation_mode", original: mode, coerced: lower, reason: "lowercase-delegation-mode" });
+        const newD = { ...origD, delegation_mode: lower };
+        work.body = { ...(body as Record<string, unknown>), d: newD };
+      }
+    }
+
+    // tid: stringify non-string (leave null/undefined alone)
+    if (work.tid !== undefined && work.tid !== null && typeof work.tid !== "string") {
+      const s = String(work.tid);
+      warnings.push({ field: "tid", original: work.tid, coerced: s, reason: "stringify-tid" });
+      work.tid = s;
+    }
+
+    // pid: stringify non-string (leave null/undefined alone; null pid is valid)
+    if (work.pid !== undefined && work.pid !== null && typeof work.pid !== "string") {
+      const s = String(work.pid);
+      warnings.push({ field: "pid", original: work.pid, coerced: s, reason: "stringify-pid" });
+      work.pid = s;
+    }
+
+    // det: coerce non-boolean to boolean
+    if (work.det !== undefined && typeof work.det !== "boolean") {
+      const b = Boolean(work.det);
+      warnings.push({ field: "det", original: work.det, coerced: b, reason: "coerce-det-to-bool" });
+      work.det = b;
+    }
+
+    const msg = CLowlMessage.fromDict(work as unknown as CLowlMessageData);
+    msg.coercionWarnings = warnings;
+    return msg;
   }
 
   /** Construct a CLowlMessage from a JSON string. */
@@ -178,7 +269,7 @@ export class CLowlMessage {
       errors.push("Missing required field: mid");
     }
 
-    if (typeof this.ts !== "number" || this.ts < 0) {
+    if (typeof this.ts !== "number" || !Number.isInteger(this.ts) || this.ts < 0) {
       errors.push(`Invalid ts: ${JSON.stringify(this.ts)} (must be non-negative integer)`);
     }
 
@@ -236,6 +327,18 @@ export class CLowlMessage {
           errors.push("ctx.hash must be a 64-char SHA-256 hex string");
         }
       }
+    }
+
+    if (this.tid !== undefined && typeof this.tid !== "string") {
+      errors.push(`tid must be a string (got ${JSON.stringify(this.tid)})`);
+    }
+
+    if (this.pid !== undefined && this.pid !== null && typeof this.pid !== "string") {
+      errors.push(`pid must be a string (got ${JSON.stringify(this.pid)})`);
+    }
+
+    if (typeof this.det !== "boolean") {
+      errors.push(`det must be a boolean (got ${JSON.stringify(this.det)})`);
     }
 
     return errors;

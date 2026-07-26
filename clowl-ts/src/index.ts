@@ -30,6 +30,7 @@ export type {
   CLowlProgressData,
   CLowlMessageData,
   CLowlMessageOptions,
+  CoercionWarning,
   ValidationError,
   ConversationState,
   StateEvent,

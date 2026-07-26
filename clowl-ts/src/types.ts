@@ -98,6 +98,7 @@ export interface CLowlMessageData {
 
 /** Options for creating a CLowlMessage */
 export interface CLowlMessageOptions {
+  clowl?: string;
   mid?: string;
   ts?: number;
   tid?: string;
@@ -111,6 +112,13 @@ export interface CLowlMessageOptions {
 export interface ValidationError {
   field: string;
   message: string;
+}
+
+export interface CoercionWarning {
+  field: string;
+  original: unknown;
+  coerced: unknown;
+  reason: string;
 }
 
 // ---- State Machine Types ----

@@ -7,10 +7,11 @@ CLowl messages.
 No external dependencies. Python 3.8+ only.
 """
 
+import hashlib
 import json
+import re
 import time
 import uuid
-import hashlib
 from datetime import datetime, timezone
 from typing import Optional, Union, List
 
@@ -96,6 +97,7 @@ class CLowlMessage:
         body_t: str,
         body_d: Optional[dict] = None,
         *,
+        clowl: Optional[str] = None,
         mid: Optional[str] = None,
         ts: Optional[int] = None,
         tid: Optional[str] = None,
@@ -104,7 +106,7 @@ class CLowlMessage:
         auth: Optional[str] = None,
         det: bool = False,
     ):
-        self.clowl  = CLOWL_VERSION
+        self.clowl = clowl if clowl is not None else CLOWL_VERSION
         self.mid   = mid or generate_mid()
         self.ts    = ts  or int(time.time())
         self.tid   = tid
@@ -117,6 +119,7 @@ class CLowlMessage:
         self.ctx   = ctx
         self.auth  = auth
         self.det   = det
+        self.coercion_warnings: list = []
 
     # ------------------------------------------------------------------
     # Serialization
@@ -147,18 +150,26 @@ class CLowlMessage:
         return json.dumps(self.to_dict(), indent=indent)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CLowlMessage":
-        """Construct a CLowlMessage from a dict (e.g., parsed JSON)."""
-        body   = data.get("body", {})
-        body_t = body.get("t", "")
-        body_d = body.get("d", {})
+    def from_dict(cls, data: dict, lenient: bool = False) -> "CLowlMessage":
+        """Construct a CLowlMessage from a dict (e.g., parsed JSON).
+
+        Strict by default. Missing required fields yield an invalid message
+        (validate() catches them) rather than raising KeyError. Pass
+        lenient=True to coerce near-miss payloads; see parse_lenient.
+        """
+        if lenient:
+            return cls.parse_lenient(data)
+        body   = data.get("body", {}) or {}
+        body_t = body.get("t", "") if isinstance(body, dict) else ""
+        body_d = body.get("d", {}) if isinstance(body, dict) else {}
         return cls(
-            p      = data["p"],
-            from_  = data["from"],
-            to     = data["to"],
-            cid    = data["cid"],
+            p      = data.get("p"),
+            from_  = data.get("from"),
+            to     = data.get("to"),
+            cid    = data.get("cid"),
             body_t = body_t,
             body_d = body_d,
+            clowl  = data.get("clowl"),
             mid    = data.get("mid"),
             ts     = data.get("ts"),
             tid    = data.get("tid"),
@@ -167,6 +178,80 @@ class CLowlMessage:
             auth   = data.get("auth"),
             det    = data.get("det", False),
         )
+
+    @classmethod
+    def parse_lenient(cls, data: dict) -> "CLowlMessage":
+        """Lenient parse: coerce near-miss payloads into the declared schema and
+        record the original defects in coercion_warnings so audits can see what
+        was changed. Strict from_dict stays the default and is unchanged.
+        """
+        warnings: list = []
+        if not isinstance(data, dict):
+            # Non-dict input cannot be coerced; build an empty message so validate() fails.
+            msg = cls.from_dict({})
+            msg.coercion_warnings = warnings
+            return msg
+        work = dict(data)
+
+        # clowl version
+        if isinstance(work.get("clowl"), str) and work["clowl"] != CLOWL_VERSION:
+            warnings.append({"field": "clowl", "original": work["clowl"], "coerced": CLOWL_VERSION, "reason": "coerce-clowl-version"})
+            work["clowl"] = CLOWL_VERSION
+
+        # ts: numeric string -> int
+        if isinstance(work.get("ts"), str) and re.fullmatch(r"-?\d+", work["ts"].strip()):
+            n = int(work["ts"].strip())
+            warnings.append({"field": "ts", "original": work["ts"], "coerced": n, "reason": "numeric-string-to-int"})
+            work["ts"] = n
+
+        # p: trim then uppercase (only when it lands on a valid performative)
+        p = work.get("p")
+        if isinstance(p, str):
+            trimmed = p.strip()
+            if trimmed != p and trimmed in VALID_PERFORMATIVES:
+                warnings.append({"field": "p", "original": p, "coerced": trimmed, "reason": "trim-performative"})
+                work["p"] = trimmed
+            elif p not in VALID_PERFORMATIVES and p.upper() in VALID_PERFORMATIVES:
+                up = p.upper()
+                warnings.append({"field": "p", "original": p, "coerced": up, "reason": "uppercase-performative"})
+                work["p"] = up
+
+        # body.d.delegation_mode: lowercase (DLGT)
+        body = work.get("body")
+        if work.get("p") == "DLGT" and isinstance(body, dict) and isinstance(body.get("d"), dict):
+            d = dict(body["d"])
+            mode = d.get("delegation_mode")
+            if isinstance(mode, str) and mode not in VALID_DELEGATION_MODES and mode.lower() in VALID_DELEGATION_MODES:
+                lower = mode.lower()
+                warnings.append({"field": "body.d.delegation_mode", "original": mode, "coerced": lower, "reason": "lowercase-delegation-mode"})
+                d["delegation_mode"] = lower
+                new_body = dict(body)
+                new_body["d"] = d
+                work["body"] = new_body
+
+        # tid: stringify non-string (leave None alone)
+        tid = work.get("tid")
+        if tid is not None and not isinstance(tid, str):
+            s = str(tid)
+            warnings.append({"field": "tid", "original": tid, "coerced": s, "reason": "stringify-tid"})
+            work["tid"] = s
+
+        # pid: stringify non-string (leave None alone; null pid is valid)
+        pid = work.get("pid")
+        if pid is not None and not isinstance(pid, str):
+            s = str(pid)
+            warnings.append({"field": "pid", "original": pid, "coerced": s, "reason": "stringify-pid"})
+            work["pid"] = s
+
+        # det: coerce non-boolean to boolean
+        if "det" in work and not isinstance(work["det"], bool):
+            b = bool(work["det"])
+            warnings.append({"field": "det", "original": work["det"], "coerced": b, "reason": "coerce-det-to-bool"})
+            work["det"] = b
+
+        msg = cls.from_dict(work)
+        msg.coercion_warnings = warnings
+        return msg
 
     @classmethod
     def from_json(cls, json_str: str) -> "CLowlMessage":
@@ -231,6 +316,15 @@ class CLowlMessage:
                 h = self.ctx.get("hash")
                 if h and not (isinstance(h, str) and len(h) == 64):
                     errors.append(f"ctx.hash must be a 64-char SHA-256 hex string")
+
+        if self.tid is not None and not isinstance(self.tid, str):
+            errors.append(f"tid must be a string (got {self.tid!r})")
+
+        if self.pid is not None and not isinstance(self.pid, str):
+            errors.append(f"pid must be a string (got {self.pid!r})")
+
+        if not isinstance(self.det, bool):
+            errors.append(f"det must be a boolean (got {self.det!r})")
 
         return errors
 

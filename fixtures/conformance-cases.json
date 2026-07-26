@@ -1,14 +1,18 @@
 {
   "_meta": {
-    "description": "CLowl shared conformance fixture suite. Cases in the intersection where the two hand-maintained CLASS validators (TS CLowlMessage.validate / Python CLowlMessage.validate) agree. Consumed by both SDK runners plus fixtures/divergence_gate.py. Verdict vocab: valid | invalid | roundtrip_ok | roundtrip_mismatch.",
-    "conformance_pair": "TS src/message.ts CLowlMessage.validate <-> Python clowl.py CLowlMessage.validate. NOT TS schema.ts validateSchema() (TS-only, stricter, no Python analog).",
-    "kept_out": "Latent divergences reserved for OSA-1153 item 1: pid:null handling, unknown/extra fields, wrong clowl version (Python hardcodes 0.2), non-string tid/pid/det, float ts (TS accepts, Python rejects). Also 'missing mid' is NOT testable as invalid: both constructors auto-generate mid when falsy/nullish, so it validates valid in both. i02 tests the empty-string 'from' validate path instead (distinct from i04 missing-from construction path).",
+    "description": "CLowl shared conformance fixture suite. Cases exercise the two hand-maintained CLASS validators (TS CLowlMessage.validate / Python CLowlMessage.validate) in BOTH strict and lenient parse modes. Consumed by both SDK runners plus fixtures/divergence_gate.py. Verdict vocab: valid | invalid | roundtrip_ok | roundtrip_mismatch.",
+    "conformance_pair": "TS src/message.ts CLowlMessage.validate / fromDict / parseLenient <-> Python clowl.py CLowlMessage.validate / from_dict / parse_lenient. NOT TS schema.ts validateSchema() (TS-only, stricter, no Python analog).",
+    "modes": {
+      "strict": "run fromDict(input) (default) -> validate. expected_verdict is the strict verdict.",
+      "lenient": "run parseLenient(input) (opt-in) -> validate. expected_lenient_verdict is the lenient verdict; when absent it defaults to expected_verdict. Cases with expected_coercions also assert the produced coercion_warnings (order-independent) in each SDK."
+    },
     "classes": {
-      "valid": "run validate() -> expect valid",
-      "invalid": "run validate() (wrap construction in try/except -> invalid) -> expect invalid",
-      "coercible": "invalid under strict validation today; expected_coercion annotates the intended OSA-1153 item 1 normalization -> expect invalid now",
+      "valid": "strict validate() -> expect valid",
+      "invalid": "strict validate() (construction that would raise is caught -> invalid) -> expect invalid",
+      "coercible": "invalid under strict; lenient coerces into the declared schema and graduates to valid with coercion_warnings",
       "roundtrip": "if invalid -> invalid; else compare parse->toDict() against expected_roundtrip -> roundtrip_ok | roundtrip_mismatch"
-    }
+    },
+    "convergence_notes": "OSA-1153 item 1 converged the latent divergences item 3 held out: wrong clowl version is now strict-invalid in BOTH SDKs (Python stopped hardcoding 0.2 on parse; both now read and validate the field); non-string tid/pid and non-boolean det are strict-invalid in BOTH (lenient stringifies/coerces); float ts is strict-invalid in BOTH (TS added an integer check to match Python); missing p/from/to/cid returns invalid in Python instead of raising KeyError (aligned with the TS no-throw path). pid:null stays valid both modes both SDKs; unknown/extra fields are ignored consistently and stay valid. Integral-float ts truncation is intentionally NOT gated: JS Number has no int/float distinction, so an integral-valued float is indistinguishable from an integer in TS. The float-ts case therefore uses a non-integral float, which both SDKs reject in strict AND lenient."
   },
   "cases": [
     {
@@ -141,7 +145,7 @@
       "id": "i03_missing_p",
       "class": "invalid",
       "expected_verdict": "invalid",
-      "note": "Python from_dict raises KeyError on missing p; runner catches -> invalid. TS yields undefined p -> validate fails.",
+      "note": "After item 1, Python from_dict uses .get() so missing p yields None (no KeyError); validate fails. TS yields undefined p -> validate fails. Both -> invalid via the aligned no-throw path.",
       "input": {
         "clowl": "0.2",
         "mid": "m-i03",
@@ -289,14 +293,17 @@
       "id": "i13_non_object",
       "class": "invalid",
       "expected_verdict": "invalid",
-      "note": "Top-level value is not an object. Python from_dict raises AttributeError; TS constructs an all-undefined message. Both -> invalid.",
+      "note": "Top-level value is not an object. Strict: Python from_dict raises AttributeError (caught -> invalid), TS constructs an all-undefined message -> invalid. Lenient: both parseLenient guards build an empty message -> invalid. Both modes -> invalid.",
       "input": "not-an-object"
     },
     {
       "id": "c01_ts_as_string",
       "class": "coercible",
       "expected_verdict": "invalid",
-      "expected_coercion": { "field": "ts", "from": "1709078400", "to": 1709078400, "rule": "numeric-string-to-int" },
+      "expected_lenient_verdict": "valid",
+      "expected_coercions": [
+        { "field": "ts", "original": "1709078400", "coerced": 1709078400, "reason": "numeric-string-to-int" }
+      ],
       "input": {
         "clowl": "0.2",
         "mid": "m-c01",
@@ -312,7 +319,10 @@
       "id": "c02_perf_lowercase",
       "class": "coercible",
       "expected_verdict": "invalid",
-      "expected_coercion": { "field": "p", "from": "req", "to": "REQ", "rule": "uppercase-performative" },
+      "expected_lenient_verdict": "valid",
+      "expected_coercions": [
+        { "field": "p", "original": "req", "coerced": "REQ", "reason": "uppercase-performative" }
+      ],
       "input": {
         "clowl": "0.2",
         "mid": "m-c02",
@@ -328,7 +338,10 @@
       "id": "c03_perf_trailing_space",
       "class": "coercible",
       "expected_verdict": "invalid",
-      "expected_coercion": { "field": "p", "from": "REQ ", "to": "REQ", "rule": "trim-performative" },
+      "expected_lenient_verdict": "valid",
+      "expected_coercions": [
+        { "field": "p", "original": "REQ ", "coerced": "REQ", "reason": "trim-performative" }
+      ],
       "input": {
         "clowl": "0.2",
         "mid": "m-c03",
@@ -344,7 +357,10 @@
       "id": "c04_delegation_mode_uppercase",
       "class": "coercible",
       "expected_verdict": "invalid",
-      "expected_coercion": { "field": "body.d.delegation_mode", "from": "TRANSFER", "to": "transfer", "rule": "lowercase-delegation-mode" },
+      "expected_lenient_verdict": "valid",
+      "expected_coercions": [
+        { "field": "body.d.delegation_mode", "original": "TRANSFER", "coerced": "transfer", "reason": "lowercase-delegation-mode" }
+      ],
       "input": {
         "clowl": "0.2",
         "mid": "m-c04",
@@ -354,6 +370,120 @@
         "to": "muse",
         "cid": "conv-1",
         "body": { "t": "analyze", "d": { "delegation_mode": "TRANSFER" } }
+      }
+    },
+    {
+      "id": "b01_pid_null",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "expected_lenient_verdict": "valid",
+      "note": "pid:null is allowed. Valid in both modes and both SDKs (validate does not require pid, and the type check exempts null).",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-b01",
+        "ts": 1709078400,
+        "pid": null,
+        "p": "ACK",
+        "from": "radar",
+        "to": "oscar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "b02_unknown_fields",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "expected_lenient_verdict": "valid",
+      "note": "Unknown top-level and body.d fields are ignored consistently: both SDKs read only declared fields, so extras do not affect validity. Valid in both modes.",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-b02",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": { "extra": 1 } },
+        "unknown_top": "ignored"
+      }
+    },
+    {
+      "id": "b03_wrong_clowl_version",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "valid",
+      "note": "Wrong clowl version. Item 1 makes both SDKs read and validate the field (Python stopped hardcoding 0.2 on parse), so strict is invalid in BOTH. Lenient coerces to the current version.",
+      "expected_coercions": [
+        { "field": "clowl", "original": "0.1", "coerced": "0.2", "reason": "coerce-clowl-version" }
+      ],
+      "input": {
+        "clowl": "0.1",
+        "mid": "m-b03",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "b04_nonstring_meta",
+      "class": "coercible",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "valid",
+      "note": "Non-string tid/pid and non-boolean det. Strict is invalid in BOTH SDKs (new type checks). Lenient stringifies tid/pid and coerces det to a boolean.",
+      "expected_coercions": [
+        { "field": "tid", "original": 123, "coerced": "123", "reason": "stringify-tid" },
+        { "field": "pid", "original": 456, "coerced": "456", "reason": "stringify-pid" },
+        { "field": "det", "original": "yes", "coerced": true, "reason": "coerce-det-to-bool" }
+      ],
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-b04",
+        "ts": 1709078400,
+        "tid": 123,
+        "pid": 456,
+        "det": "yes",
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "b05_float_ts_nonintegral",
+      "class": "invalid",
+      "expected_verdict": "invalid",
+      "expected_lenient_verdict": "invalid",
+      "note": "Non-integral float ts. Strict invalid in BOTH SDKs (TS added an integer check to match Python). Lenient does NOT coerce a non-integral float, so it stays invalid. Integral-float truncation is not gated because JS Number cannot distinguish an integral float from an integer.",
+      "input": {
+        "clowl": "0.2",
+        "mid": "m-b05",
+        "ts": 1709078400.5,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
+      }
+    },
+    {
+      "id": "b06_missing_mid",
+      "class": "valid",
+      "expected_verdict": "valid",
+      "expected_lenient_verdict": "valid",
+      "note": "Missing mid auto-generates in both constructors (i02 spec correction), so the message is valid in both modes and both SDKs.",
+      "input": {
+        "clowl": "0.2",
+        "ts": 1709078400,
+        "p": "REQ",
+        "from": "oscar",
+        "to": "radar",
+        "cid": "conv-1",
+        "body": { "t": "search", "d": {} }
       }
     },
     {
