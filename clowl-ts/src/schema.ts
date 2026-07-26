@@ -10,6 +10,12 @@ import {
   VALID_PERFORMATIVES,
   VALID_DELEGATION_MODES,
 } from "./types.js";
+import {
+  REQUIRED_FIELDS,
+  KNOWN_FIELDS,
+  CTX_INLINE_MAX_LENGTH,
+  CTX_HASH_LENGTH,
+} from "./generated.js";
 
 /** Result of schema validation */
 export interface SchemaValidationResult {
@@ -79,7 +85,7 @@ export function validateSchema(data: unknown): SchemaValidationResult {
   const obj = data as Record<string, unknown>;
 
   // Check required fields
-  const required = ["clowl", "mid", "ts", "p", "from", "to", "cid", "body"];
+  const required = REQUIRED_FIELDS;
   for (const field of required) {
     if (!(field in obj)) {
       errors.push(`Missing required field: ${field}`);
@@ -200,14 +206,14 @@ export function validateSchema(data: unknown): SchemaValidationResult {
       if ("inline" in ctx && ctx.inline !== null) {
         if (typeof ctx.inline !== "string") {
           errors.push("ctx.inline must be a string or null");
-        } else if (ctx.inline.length > 2000) {
+        } else if (ctx.inline.length > CTX_INLINE_MAX_LENGTH) {
           errors.push(`ctx.inline exceeds 2000 character limit (got ${ctx.inline.length})`);
         }
       }
       if ("hash" in ctx && ctx.hash !== null) {
         if (typeof ctx.hash !== "string") {
           errors.push("ctx.hash must be a string or null");
-        } else if (ctx.hash.length !== 64) {
+        } else if (ctx.hash.length !== CTX_HASH_LENGTH) {
           errors.push(`ctx.hash must be a 64-char SHA-256 hex string (got ${ctx.hash.length} chars)`);
         }
       }
@@ -215,10 +221,7 @@ export function validateSchema(data: unknown): SchemaValidationResult {
   }
 
   // Check for unknown fields
-  const knownFields = new Set([
-    "clowl", "mid", "ts", "p", "from", "to", "cid", "body",
-    "tid", "pid", "ctx", "auth", "det",
-  ]);
+  const knownFields = new Set<string>(KNOWN_FIELDS);
   for (const key of Object.keys(obj)) {
     if (!knownFields.has(key)) {
       errors.push(`Unknown field: ${key}`);

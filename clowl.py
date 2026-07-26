@@ -19,14 +19,29 @@ from typing import Optional, Union, List
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-CLOWL_VERSION = "0.2"
-
-VALID_PERFORMATIVES = frozenset({
-    "REQ", "INF", "ACK", "ERR", "DLGT", "DONE", "CNCL", "QRY", "PROG", "CAPS"
-})
-
-VALID_DELEGATION_MODES = frozenset({"transfer", "fork", "assist"})
+#
+# CLOWL_VERSION, VALID_PERFORMATIVES, VALID_DELEGATION_MODES, and the ctx length
+# limits are generated from clowl-schema.json (see tools/gen_sdk_layer.py) and
+# imported here so the schema is their single source of truth. PERFORMATIVE_NAMES
+# is the human-readable label map, which the schema does not declare, so it stays
+# hand-maintained. The dual import keeps this file byte-identical between the
+# packaged copy (clowl/clowl.py) and the root reference twin (clowl.py).
+try:
+    from ._generated import (
+        CLOWL_VERSION,
+        VALID_PERFORMATIVES,
+        VALID_DELEGATION_MODES,
+        CTX_INLINE_MAX_LENGTH,
+        CTX_HASH_LENGTH,
+    )
+except ImportError:  # standalone (repo-root) execution, not imported as a package
+    from _generated import (
+        CLOWL_VERSION,
+        VALID_PERFORMATIVES,
+        VALID_DELEGATION_MODES,
+        CTX_INLINE_MAX_LENGTH,
+        CTX_HASH_LENGTH,
+    )
 
 PERFORMATIVE_NAMES = {
     "REQ":  "REQUEST",
@@ -311,10 +326,10 @@ class CLowlMessage:
                 errors.append("ctx must be an object with ref/inline/hash fields")
             else:
                 inline = self.ctx.get("inline")
-                if inline and len(inline) > 2000:
+                if inline and len(inline) > CTX_INLINE_MAX_LENGTH:
                     errors.append(f"ctx.inline exceeds 2000 character limit (got {len(inline)})")
                 h = self.ctx.get("hash")
-                if h and not (isinstance(h, str) and len(h) == 64):
+                if h and not (isinstance(h, str) and len(h) == CTX_HASH_LENGTH):
                     errors.append(f"ctx.hash must be a 64-char SHA-256 hex string")
 
         if self.tid is not None and not isinstance(self.tid, str):
