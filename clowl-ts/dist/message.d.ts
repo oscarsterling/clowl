@@ -7,7 +7,9 @@ import { type Performative, type DelegationMode, type Recipient, type CLowlBody,
 /**
  * Generate a time-ordered message ID (UUIDv7-style).
  * Format: <timestamp_ms_hex>-7<3hex>-<4hex>-<4hex>-<12hex>
- * Sorts lexicographically by creation time.
+ * Sorts lexicographically by creation time. Within the same millisecond the
+ * random tail is incremented so consecutively generated IDs are strictly
+ * ordered (monotonic), which callers rely on for audit ordering.
  */
 export declare function generateMid(): string;
 /** Generate a conversation ID. */
